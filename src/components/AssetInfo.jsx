@@ -1,6 +1,8 @@
 import React, { Component } from 'react';
 import { Col, Row, Well } from 'react-bootstrap';
 
+import AssetMarket from './AssetMarket';
+
 export default class AssetInfo extends Component {
 
 
@@ -53,10 +55,8 @@ export default class AssetInfo extends Component {
                         </Row>                
                     </Well>
                 </Row>
-                <Row 
-                    className="clearfix"
-                >
-                    Comprar mais titulos
+                <Row className="clearfix">
+                    <AssetMarket assetValue={asset.value} />
                 </Row>
                 <Row 
                     className="clearfix"

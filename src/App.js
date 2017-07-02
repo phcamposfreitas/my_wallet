@@ -7,11 +7,11 @@ import AssetPanel from './components/AssetPanel';
 class App extends Component {
   render() {
     const ASSETS = [
-      { name: 'LTN 2023', class:'Renda Fixa', year:'2023', owner:'Tesouro Direto', type:'Titulo Público'},
-      { name: 'CDB Pan', class:'Renda Fixa', year:'2023', owner:'Banco Pan', type:'CDB'},
-      { name: 'LCI BB', class:'Renda Fixa', year:'2023', owner:'Banco do Brasil', type:'LCI'},
-      { name: 'CMIG4', class:'Renda Variável', year:'-', owner:'CEMIG', type:'Ações'},
-      { name: 'BOVA11', class:'Renda Variável', year:'-', owner:'Bovespa', type:'ETF'}
+      { name: 'LTN 2023', class:'Renda Fixa', year:'2023', owner:'Tesouro Direto', type:'Titulo Público', value:5.23 },
+      { name: 'CDB Pan', class:'Renda Fixa', year:'2023', owner:'Banco Pan', type:'CDB', value:8.03},
+      { name: 'LCI BB', class:'Renda Fixa', year:'2023', owner:'Banco do Brasil', type:'LCI', value:25.28},
+      { name: 'CMIG4', class:'Renda Variável', year:'-', owner:'CEMIG', type:'Ações', value:45.0},
+      { name: 'BOVA11', class:'Renda Variável', year:'-', owner:'Bovespa', type:'ETF', value:235.08}
     ];
 
     return (
