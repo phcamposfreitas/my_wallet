@@ -1,0 +1,13 @@
+.menu {
+    background-color: white
+}
+
+.menu-item {
+    display: inline;
+    margin: 10px;
+}
+
+.menu-item a {
+    color: red;
+    font-weight: 500px;
+}
