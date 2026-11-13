@@ -18,7 +18,7 @@ def categorize(desc):
            'spotify','anthropic','claude','openai','disney','hbo','starlink','subscription','prime'):
         return 'Assinaturas'
     if has('iof','anuidade','juros','multa','tarifa','encargo','repasse de iof'): return 'Impostos e taxas'
-    if has('raia','drogaria','farmacia','smartfit','academia','clinica','laborator','odonto','hospital','pague menos','drogasil'):
+    if has('raia2','droga raia','drogaria','farmacia','smartfit','academia','clinica','laborator','odonto','hospital','pague menos','drogasil'):
         return 'Saúde'
     if has('posto','uber','99app','ipiranga','shell','raizen','estaciona','combustivel','onibus','metro','latam','gol ','azul '):
         return 'Transporte'

@@ -83,8 +83,13 @@ DELETE /api/statements/:id                 → remove a fatura e seus lançament
 - **Idempotência:** existe uma fatura por (cartão, vencimento). Reenviar a mesma fatura
   retorna 422. Para substituir, use `replace: true`. Lançamentos idênticos na mesma fatura
   (ex.: dois cafés iguais no mesmo dia) são aceitos.
-- **Categorias:** use os nomes que já existem. Um nome desconhecido gera aviso e o lançamento
-  fica sem categoria; dá para corrigir depois na interface.
+- **Categorias:** use os nomes que já existem. Lançamento sem categoria (ou com nome
+  desconhecido) passa pelas **regras por estabelecimento** (`/api/category-rules`): um trecho
+  da descrição, sem diferenciar acento e maiúsculas, aponta para uma categoria; se mais de uma
+  casar, vence a mais longa. `POST /api/category-rules/apply` aplica as regras aos lançamentos
+  já gravados sem categoria (nunca sobrescreve uma categoria existente).
+- **Substituição preserva categorias:** com `replace: true`, a categoria de cada lançamento já
+  gravado (inclusive ajuste manual) é mantida pelo `external_id`.
 
 ## O que conferir na extração
 
