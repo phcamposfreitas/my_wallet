@@ -67,3 +67,38 @@ describe('operações', () => {
     expect(del.statusCode).toBe(400);
   });
 });
+
+describe('agregado anual', () => {
+  it('soma por mês, categoria, conta e agrupa parcelas do mesmo estabelecimento', async () => {
+    const card = (await post('/api/accounts', { name: 'Cartão', type: 'credit_card' })).body;
+    const cats = await get('/api/categories');
+    const id = (n: string) => cats.find((c: { name: string }) => c.name === n).id;
+    const tx = (date: string, description: string, amount_cents: number, cat?: string) =>
+      post('/api/transactions', { account_id: card.id, date, description, amount_cents, category_id: cat ? id(cat) : null });
+
+    await tx('2026-01-10', 'LOJA X - Parcela 1/3', -10_000, 'Compras');
+    await tx('2026-02-10', 'LOJA X - Parcela 2/3', -10_000, 'Compras');
+    await tx('2026-02-11', 'Mercado Bom', -5_000, 'Mercado');
+    await tx('2026-02-12', 'Estorno Mercado Bom', 1_000, 'Mercado');
+    await tx('2026-03-01', 'Sem categoria aqui', -2_000);
+    await tx('2025-12-31', 'Ano anterior', -99_999, 'Compras');
+
+    const y = await get('/api/summary/year?year=2026');
+    expect(y.totals.expense_cents).toBe(27_000);
+    expect(y.totals.income_cents).toBe(1_000);
+    expect(y.totals.net_expense_cents).toBe(26_000);
+    expect(y.totals.months_with_data).toBe(3);
+    expect(y.totals.uncategorized_cents).toBe(2_000);
+    expect(y.months).toHaveLength(12);
+    expect(y.months[1]).toMatchObject({ month: '2026-02', expense_cents: 15_000, income_cents: 1_000 });
+
+    const compras = y.by_category.find((c: { name: string }) => c.name === 'Compras');
+    expect(compras.total_cents).toBe(20_000);
+    expect(compras.monthly.slice(0, 3)).toEqual([10_000, 10_000, 0]);
+    const mercado = y.by_category.find((c: { name: string }) => c.name === 'Mercado');
+    expect(mercado.total_cents).toBe(4_000); // estorno abate
+
+    expect(y.top_merchants[0]).toMatchObject({ name: 'LOJA X', total_cents: 20_000, count: 2 });
+    expect(y.by_account[0]).toMatchObject({ name: 'Cartão', expense_cents: 27_000 });
+  });
+});

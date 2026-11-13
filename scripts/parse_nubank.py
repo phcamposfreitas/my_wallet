@@ -23,7 +23,7 @@ def categorize(desc):
     if has('iof'): return 'Impostos e taxas'
     if has('daki','rei das carnes','mercado','super','hortifruti','liv up','assai','carrefour','pao de acucar'): return 'Mercado'
     if has('localiza','uber','99app','99 *','posto','combustivel','estaciona','shell','ipiranga','raizen'): return 'Transporte'
-    if has('pratique','farmacia','drogaria','academia','smartfit','clinica','laboratorio','hospital'): return 'Saude'
+    if has('pratique','farmacia','drogaria','academia','smartfit','clinica','laboratorio','hospital'): return 'Saúde'
     if has('ifd','ifood','restaurante','bar ','pizzaria','sushi','acai','lanchonete','cozinha','burguer','hamburger','pao','cafe','padaria','freixenet','point beer','napoli','benja','daki'):
         # Daki já tratado acima; aqui cobre restaurantes/iFood
         return 'Alimentação'
@@ -75,9 +75,11 @@ def parse(path, due_date, account_name='Nubank'):
         if amt == 0:  # linhas de R$ 0,00 não têm efeito financeiro
             continue
         mo = MESES[mmm]
-        # ano: período pode cruzar virada; usa ano do vencimento e ajusta DEZ->ano-1 se vencimento jan
+        # ano: a data não traz o ano. Uma compra não pode ser posterior ao vencimento,
+        # então mês da compra > mês do vencimento significa ano anterior (ex.: "31 DEZ"
+        # na fatura que vence em fevereiro, ou parcela antiga listada no início do período).
         y = year
-        if mv and mv.group(2) == 'JAN' and mmm == 'DEZ':
+        if mv and mo > MESES[mv.group(2)]:
             y = year - 1
         date = f"{y}-{mo:02d}-{int(dd):02d}"
         it = {"date": date, "description": desc, "amount_cents": amt}

@@ -7,12 +7,14 @@ import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Portfolio from './pages/Portfolio';
 import Settings from './pages/Settings';
+import Year from './pages/Year';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
 const NAV = [
   { to: '/', label: 'Painel' },
   { to: '/transacoes', label: 'Gastos' },
+  { to: '/ano', label: 'Ano' },
   { to: '/carteira', label: 'Carteira' },
   { to: '/cadastros', label: 'Cadastros' },
 ];
@@ -34,6 +36,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/transacoes" element={<Transactions />} />
+          <Route path="/ano" element={<Year />} />
           <Route path="/carteira/*" element={<Portfolio />} />
           <Route path="/cadastros" element={<Settings />} />
         </Routes>

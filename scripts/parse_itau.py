@@ -19,7 +19,7 @@ def categorize(desc):
         return 'Assinaturas'
     if has('iof','anuidade','juros','multa','tarifa','encargo','repasse de iof'): return 'Impostos e taxas'
     if has('raia','drogaria','farmacia','smartfit','academia','clinica','laborator','odonto','hospital','pague menos','drogasil'):
-        return 'Saude'
+        return 'Saúde'
     if has('posto','uber','99app','ipiranga','shell','raizen','estaciona','combustivel','onibus','metro','latam','gol ','azul '):
         return 'Transporte'
     if has('sacolao','hortifruti','supermerc','mercado','assai','carrefour','epa ','pao de acucar','zona sul'):
@@ -54,6 +54,8 @@ def parse(path, account_name):
     mv = re.search(r'Vencimento:\s*(\d{2})/(\d{2})/(\d{4})', text)
     due_date = f"{mv.group(3)}-{mv.group(2)}-{mv.group(1)}" if mv else None
     vy, vm = (int(mv.group(3)), int(mv.group(2))) if mv else (2026, 1)
+    me = re.search(r'Emiss[ãa]o:\s*(\d{2})/(\d{2})/(\d{4})', text)  # emissão = fechamento
+    closing_date = f"{me.group(3)}-{me.group(2)}-{me.group(1)}" if me else None
 
     def ano(mm):
         return vy - 1 if mm > vm else vy
@@ -84,6 +86,10 @@ def parse(path, account_name):
         it = {"date": f"{ano(mo)}-{mm}-{dd}", "description": desc, "amount_cents": amt}
         c = categorize(desc)
         if c: it["category"] = c
+        # Parcela ("SAMSUNG NO ITAU 18/21"): data impressa é a da compra original.
+        mp = re.search(r'\s(\d{1,2})/(\d{1,2})$', desc)
+        if mp and 0 < int(mp.group(1)) <= int(mp.group(2)):
+            it["installment_number"], it["installment_total"] = int(mp.group(1)), int(mp.group(2))
         items.append(it)
 
     if total is not None:
@@ -93,7 +99,7 @@ def parse(path, account_name):
 
     payload = {
         "account": {"name": account_name, "institution": "Itaú"},
-        "statement": {"due_date": due_date, "total_cents": total,
+        "statement": {"due_date": due_date, "closing_date": closing_date, "total_cents": total,
                       "previous_balance_cents": prev, "payments_cents": pay,
                       "source": f"itau-pdf:{account_name}:{due_date}", "extracted_by": "claude"},
         "items": items,

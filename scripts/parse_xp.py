@@ -19,7 +19,7 @@ def categorize(desc):
         return 'Assinaturas'
     if has('iof','anuidade','juros','multa','tarifa','encargo'): return 'Impostos e taxas'
     if has('raia','drogaria','farmacia','fitpro','sofit','smartfit','academia','drsaude','pague menos','clinica','laboratorio','odonto'):
-        return 'Saude'
+        return 'Saúde'
     if has('posto','quick ltda','uber','99app','dl *uber','dl*uber','ipiranga','shell','raizen','estaciona','combustivel','onibus','metro'):
         return 'Transporte'
     if has('sup epa','epa ','sacolao','hortifruti','supermerc','mercado','assai','carrefour','pao de acucar','zona sul','sup '):
@@ -52,6 +52,9 @@ def parse(path, account_name='Cartão XP'):
 
     mv = re.search(r'(\d{2})/(\d{2})/(\d{4})', text)  # 1ª DD/MM/AAAA = vencimento (cabeçalho)
     due_date = f"{mv.group(3)}-{mv.group(2)}-{mv.group(1)}" if mv else None
+    # "Fatura fechada em" fica numa linha e a data na seguinte.
+    mf = re.search(r'Fatura fechada em[^\n]*\n\s*(\d{2})/(\d{2})/(\d{4})', text)
+    closing_date = f"{mf.group(3)}-{mf.group(2)}-{mf.group(1)}" if mf else None
 
     tx = re.compile(r'^\s*(\d{2})/(\d{2})/(\d{2})(?!\d)\s+(.+?)\s+(-?[\d.]+,\d{2})(?:\s+(-?[\d.]+,\d{2}))?\s*$')
     items = []
@@ -72,6 +75,11 @@ def parse(path, account_name='Cartão XP'):
         it = {"date": f"20{yy}-{mm}-{dd}", "description": desc, "amount_cents": amt}
         cat = categorize(desc)
         if cat: it["category"] = cat
+        # Parcela: a data impressa é a da compra original; a API move parcelas 2/N
+        # para o fechamento da fatura (o mês em que foram cobradas).
+        mp = re.search(r'-\s*parcela\s*(\d+)\s*/\s*(\d+)', desc, re.I)
+        if mp:
+            it["installment_number"], it["installment_total"] = int(mp.group(1)), int(mp.group(2))
         if usd and cents(usd) != 0:
             it["original_amount"] = abs(cents(usd)) / 100
             it["original_currency"] = "USD"
@@ -84,7 +92,7 @@ def parse(path, account_name='Cartão XP'):
 
     payload = {
         "account": {"name": account_name, "institution": "XP"},
-        "statement": {"due_date": due_date, "total_cents": total,
+        "statement": {"due_date": due_date, "closing_date": closing_date, "total_cents": total,
                       "previous_balance_cents": prev, "payments_cents": pay,
                       "source": f"xp-pdf:{due_date}", "extracted_by": "claude"},
         "items": items,

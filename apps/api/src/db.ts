@@ -184,7 +184,7 @@ const MIGRATIONS: string[] = [
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
-  ['Moradia', 'expense', '#8b5cf6'],
+  ['Moradia', 'expense', '#b45309'],
   ['Alimentação', 'expense', '#f97316'],
   ['Mercado', 'expense', '#eab308'],
   ['Transporte', 'expense', '#0ea5e9'],
