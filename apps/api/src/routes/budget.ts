@@ -97,7 +97,7 @@ export function budgetRoutes(app: FastifyInstance, db: DB) {
     skipList: true,
   });
 
-  // Resumo do mês: receitas, despesas e despesas por categoria
+  // Resumo do mês: receitas, despesas e despesas por categoria (transferências, como pagamento de fatura, ficam de fora)
   app.get('/summary/month', async (req) => {
     const { month: m } = z.object({ month }).parse(req.query);
     const [start, end] = monthRange(m);
@@ -106,7 +106,7 @@ export function budgetRoutes(app: FastifyInstance, db: DB) {
         `SELECT
            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents END), 0) AS income_cents,
            COALESCE(-SUM(CASE WHEN amount_cents < 0 THEN amount_cents END), 0) AS expense_cents
-         FROM transactions WHERE date >= ? AND date < ?`,
+         FROM transactions WHERE date >= ? AND date < ? AND kind = 'normal'`,
       )
       .get(start, end) as { income_cents: number; expense_cents: number };
     const byCategory = db
@@ -114,7 +114,7 @@ export function budgetRoutes(app: FastifyInstance, db: DB) {
         `SELECT c.id AS category_id, COALESCE(c.name, 'Sem categoria') AS name, c.color,
                 -SUM(t.amount_cents) AS total_cents
          FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-         WHERE t.date >= ? AND t.date < ? AND t.amount_cents < 0
+         WHERE t.date >= ? AND t.date < ? AND t.amount_cents < 0 AND t.kind = 'normal'
          GROUP BY c.id ORDER BY total_cents DESC`,
       )
       .all(start, end);
