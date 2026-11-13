@@ -183,3 +183,47 @@ export interface YearSummary {
   by_account: { account_id: number; name: string; type: string; expense_cents: number; income_cents: number; count: number }[];
   top_merchants: { name: string; total_cents: number; count: number }[];
 }
+
+export type PlanKind = 'fixo' | 'variavel' | 'parcelamento';
+
+export interface PlanItem {
+  id: number;
+  year: number;
+  name: string;
+  category_id: number | null;
+  category_name: string | null;
+  color: string | null;
+  kind: PlanKind;
+  amount_cents: number;
+  months: number[];
+  match_pattern: string | null;
+  notes: string | null;
+  planned: number[];
+  realized: number[];
+  annual_cents: number;
+  realized_cents: number;
+}
+
+export interface Plan {
+  year: number;
+  items: PlanItem[];
+  totals: {
+    annual_cents: number;
+    monthly_avg_cents: number;
+    monthly: number[];
+    realized_monthly: number[];
+    by_kind: Record<PlanKind, number>;
+    by_category: { category: string; color: string | null; annual_cents: number }[];
+  };
+}
+
+export interface PlanSuggestion {
+  kind: PlanKind;
+  name: string;
+  match_pattern: string;
+  category_id: number | null;
+  category_name: string | null;
+  amount_cents: number;
+  months: number[];
+  evidence: string;
+}

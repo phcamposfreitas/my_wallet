@@ -14,11 +14,13 @@ def norm(s):
 def categorize(desc):
     d = norm(desc)
     def has(*ks): return any(k in d for k in ks)
+    if has('vida xp','xp *vida','seguro'):
+        return 'Seguros'
     if has('ifood club','amazon prime','prime canais','apple.com','google','netflix','spotify','amazon music',
-           'anthropic','claude','openai','elevenlabs','microsoft','vindi','tinder','xp *vida','vida xp','disney','hbo','max '):
+           'anthropic','claude','openai','elevenlabs','microsoft','vindi','tinder','disney','hbo','max '):
         return 'Assinaturas'
     if has('iof','anuidade','juros','multa','tarifa','encargo'): return 'Impostos e taxas'
-    if has('raia','drogaria','farmacia','fitpro','sofit','smartfit','academia','drsaude','pague menos','clinica','laboratorio','odonto'):
+    if has('raia2','droga raia','drogaria','farmacia','fitpro','sofit','smartfit','academia','drsaude','pague menos','clinica','laboratorio','odonto'):
         return 'Saúde'
     if has('posto','quick ltda','uber','99app','dl *uber','dl*uber','ipiranga','shell','raizen','estaciona','combustivel','onibus','metro'):
         return 'Transporte'

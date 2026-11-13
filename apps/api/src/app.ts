@@ -4,6 +4,8 @@ import type { DB } from './db.ts';
 import { budgetRoutes } from './routes/budget.ts';
 import { investmentRoutes } from './routes/investments.ts';
 import { statementRoutes } from './routes/statements.ts';
+import { ruleRoutes } from './routes/rules.ts';
+import { planRoutes } from './routes/plan.ts';
 import { buildPortfolio } from './snapshots.ts';
 
 export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
@@ -32,6 +34,8 @@ export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
       budgetRoutes(api, db);
       investmentRoutes(api, db);
       statementRoutes(api, db);
+      ruleRoutes(api, db);
+      planRoutes(api, db);
 
       // Visão geral: saldo das contas do dia a dia + patrimônio na corretora (último snapshot)
       api.get('/overview', async () => {

@@ -181,6 +181,33 @@ const MIGRATIONS: string[] = [
   ALTER TABLE transactions ADD COLUMN card_last4 TEXT;           -- cartão adicional/virtual
   CREATE INDEX idx_transactions_statement ON transactions(statement_id);
   `,
+  // v3: regras de categorização por estabelecimento
+  `
+  -- "pattern" é comparado (sem acento, maiúsculas) como trecho da descrição.
+  -- Em caso de mais de uma regra casar, vence o padrão mais longo (mais específico).
+  CREATE TABLE category_rules (
+    id INTEGER PRIMARY KEY,
+    pattern TEXT NOT NULL UNIQUE,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
+  // v4: planejamento de gastos (itens previstos por ano)
+  `
+  CREATE TABLE plan_items (
+    id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'fixo' CHECK (kind IN ('fixo','variavel','parcelamento')),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0), -- valor previsto por mês em que incide
+    months TEXT NOT NULL DEFAULT '[1,2,3,4,5,6,7,8,9,10,11,12]', -- JSON: meses em que incide
+    match_pattern TEXT,   -- trecho da descrição para comparar com o realizado
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_plan_items_year ON plan_items(year);
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
@@ -194,6 +221,8 @@ const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
   ['Assinaturas', 'expense', '#6366f1'],
   ['Compras', 'expense', '#a855f7'],
   ['Impostos e taxas', 'expense', '#64748b'],
+  ['Seguros', 'expense', '#0369a1'],
+  ['Consórcio', 'expense', '#0f766e'],
   ['Outros gastos', 'expense', '#94a3b8'],
   ['Salário', 'income', '#22c55e'],
   ['Freelance', 'income', '#10b981'],

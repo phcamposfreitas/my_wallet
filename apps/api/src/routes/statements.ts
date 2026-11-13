@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.ts';
 import { idParam } from '../crud.ts';
+import { ruleMatcher } from './rules.ts';
 
 /**
  * Importação de faturas de cartão de crédito já extraídas (por Claude, a partir do
@@ -130,8 +131,18 @@ export function importStatement(db: DB, p: Payload, dryRun: boolean): Report {
     return c ?? null;
   };
   const cats = p.items.map((i) => resolveCat(i.category));
-  if (unknownCats.size) warnings.push(`Categorias desconhecidas (ficarão sem categoria): ${[...unknownCats].join(', ')}`);
-  const uncategorized = cats.filter((c) => !c).length;
+  if (unknownCats.size) warnings.push(`Categorias desconhecidas: ${[...unknownCats].join(', ')}`);
+  // Sem categoria no payload (ou desconhecida): tenta as regras por estabelecimento.
+  const matchRule = ruleMatcher(db);
+  let byRule = 0;
+  const catIds = p.items.map((i, idx) => {
+    if (cats[idx]) return cats[idx]!.id;
+    const r = matchRule(i.description);
+    if (r) byRule++;
+    return r;
+  });
+  if (byRule) warnings.push(`${byRule} lançamento(s) categorizado(s) por regra`);
+  const uncategorized = catIds.filter((c) => !c).length;
   if (uncategorized) warnings.push(`${uncategorized} lançamento(s) sem categoria`);
 
   // 5) Datas plausíveis
@@ -180,7 +191,16 @@ export function importStatement(db: DB, p: Payload, dryRun: boolean): Report {
       report.account = { id, name: p.account.name, created: true };
     }
     const accountId = account!.id;
-    if (existing) db.prepare('DELETE FROM statements WHERE id = ?').run(existing.id); // apaga os lançamentos em cascata
+    // Ao substituir, preserva categorias já atribuídas (inclusive ajustes manuais) pelo external_id.
+    const keptCategories = new Map<string, number>();
+    if (existing) {
+      for (const r of db
+        .prepare('SELECT external_id, category_id FROM transactions WHERE statement_id = ? AND category_id IS NOT NULL')
+        .all(existing.id) as { external_id: string; category_id: number }[]) {
+        keptCategories.set(r.external_id, r.category_id);
+      }
+      db.prepare('DELETE FROM statements WHERE id = ?').run(existing.id); // apaga os lançamentos em cascata
+    }
 
     // Primeira fatura do cartão: o saldo anterior vira saldo inicial (dívida que já existia).
     const hasHistory = db.prepare('SELECT 1 FROM transactions WHERE account_id = ? LIMIT 1').get(accountId);
@@ -227,7 +247,7 @@ export function importStatement(db: DB, p: Payload, dryRun: boolean): Report {
       const notes = [i.notes, isLaterInstallment ? `compra original em ${i.date}` : null].filter(Boolean).join(' · ') || null;
       insert.run(
         accountId,
-        cats[idx]?.id ?? null,
+        keptCategories.get(ids[idx]) ?? catIds[idx] ?? null,
         txDate,
         i.description,
         -i.amount_cents,
