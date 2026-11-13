@@ -12,3 +12,7 @@ data/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# venv de utilitários locais
+.venv/
+__pycache__/

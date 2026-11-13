@@ -31,9 +31,16 @@ apps/api   Fastify + node:sqlite + zod
   src/routes/budget.ts  contas, categorias, transações, resumo mensal
   src/routes/investments.ts  ativos, operações, proventos, carteira, importação
   src/snapshots.ts      leitura da carteira e comparação entre coletas
+  src/routes/statements.ts  importação de faturas de cartão (com conciliação)
   src/importers/xp.ts   importador dos CSVs da XP
 apps/web   React 19 + Vite + React Router + TanStack Query
 ```
+
+## Faturas de cartão
+
+As faturas em PDF chegam por e-mail. O Claude extrai os lançamentos numa sessão e envia para
+`POST /api/statements/import`, que só grava se a soma fechar com o total da fatura. Contrato e
+passo a passo em [docs/faturas-cartao.md](docs/faturas-cartao.md).
 
 ## Princípios do modelo
 
@@ -63,6 +70,7 @@ então o histórico precisa ser construído pelo próprio sistema:
 ## Próximos passos
 
 - Importar extrato bancário (OFX/CSV) para gastos, com deduplicação por `external_id`.
+- Tela de faturas na interface e regras de categorização automática por estabelecimento.
 - Importar o extrato da conta XP para conciliar aportes e saídas com resíduo zero.
 - Persistir o fator de ajuste de eventos corporativos e usar as cotações do COTAHIST (B3).
 - Tabela de-para ISIN → ativo para reembolsos de evento que vêm só com ISIN.

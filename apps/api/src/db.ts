@@ -150,10 +150,41 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (asset_id, date)
   );
   `,
+  // v2: faturas de cartão de crédito
+  `
+  -- Uma fatura mensal de cartão. Regra de conciliação (exigida na importação):
+  -- previous_balance − payments + Σ lançamentos = total.
+  CREATE TABLE statements (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    closing_date TEXT,                    -- data de fechamento
+    due_date TEXT NOT NULL,               -- vencimento (identifica a fatura)
+    total_cents INTEGER NOT NULL,         -- total a pagar
+    previous_balance_cents INTEGER NOT NULL DEFAULT 0,
+    payments_cents INTEGER NOT NULL DEFAULT 0,
+    minimum_payment_cents INTEGER,
+    source TEXT,                          -- ex.: 'gmail:<message-id>'
+    extracted_by TEXT,                    -- ex.: 'claude' ou 'manual'
+    notes TEXT,
+    import_id INTEGER REFERENCES imports(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, due_date)
+  );
+
+  -- 'transfer' (ex.: pagamento de fatura) entra no saldo da conta, mas não é gasto nem receita.
+  ALTER TABLE transactions ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal' CHECK (kind IN ('normal','transfer'));
+  ALTER TABLE transactions ADD COLUMN statement_id INTEGER REFERENCES statements(id) ON DELETE CASCADE;
+  ALTER TABLE transactions ADD COLUMN installment_number INTEGER;
+  ALTER TABLE transactions ADD COLUMN installment_total INTEGER;
+  ALTER TABLE transactions ADD COLUMN original_amount REAL;      -- compras internacionais
+  ALTER TABLE transactions ADD COLUMN original_currency TEXT;
+  ALTER TABLE transactions ADD COLUMN card_last4 TEXT;           -- cartão adicional/virtual
+  CREATE INDEX idx_transactions_statement ON transactions(statement_id);
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
-  ['Moradia', 'expense', '#8b5cf6'],
+  ['Moradia', 'expense', '#b45309'],
   ['Alimentação', 'expense', '#f97316'],
   ['Mercado', 'expense', '#eab308'],
   ['Transporte', 'expense', '#0ea5e9'],

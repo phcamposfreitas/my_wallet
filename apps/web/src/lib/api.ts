@@ -166,3 +166,20 @@ export interface ImportReport {
   status: 'importado' | 'ja_importado' | 'erro';
   details: string[];
 }
+
+export interface YearSummary {
+  year: number;
+  totals: {
+    expense_cents: number;
+    income_cents: number;
+    net_expense_cents: number;
+    months_with_data: number;
+    monthly_avg_net_expense_cents: number;
+    investment_income_cents: number;
+    uncategorized_cents: number;
+  };
+  months: { month: string; expense_cents: number; income_cents: number; investment_income_cents: number }[];
+  by_category: { category_id: number | null; name: string; color: string | null; total_cents: number; monthly: number[] }[];
+  by_account: { account_id: number; name: string; type: string; expense_cents: number; income_cents: number; count: number }[];
+  top_merchants: { name: string; total_cents: number; count: number }[];
+}

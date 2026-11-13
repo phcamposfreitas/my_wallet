@@ -3,10 +3,12 @@ import { ZodError } from 'zod';
 import type { DB } from './db.ts';
 import { budgetRoutes } from './routes/budget.ts';
 import { investmentRoutes } from './routes/investments.ts';
+import { statementRoutes } from './routes/statements.ts';
 import { buildPortfolio } from './snapshots.ts';
 
 export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
-  const app = Fastify({ logger: opts.logger ?? false });
+  // bodyLimit maior: uma fatura extraída pode ter centenas de lançamentos.
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ZodError) {
@@ -29,6 +31,7 @@ export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
       api.get('/health', async () => ({ ok: true }));
       budgetRoutes(api, db);
       investmentRoutes(api, db);
+      statementRoutes(api, db);
 
       // Visão geral: saldo das contas do dia a dia + patrimônio na corretora (último snapshot)
       api.get('/overview', async () => {
