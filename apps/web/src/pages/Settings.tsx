@@ -32,6 +32,13 @@ function Accounts() {
     },
     onError: (e: Error) => setErr(e.message),
   });
+  const toggleNetWorth = useMutation({
+    mutationFn: (a: Account) => api.patch(`/accounts/${a.id}`, { in_net_worth: !a.in_net_worth }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['overview'] });
+    },
+  });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -56,6 +63,7 @@ function Accounts() {
                 <th>Nome</th>
                 <th>Tipo</th>
                 <th className="num">Saldo</th>
+                <th title="Desmarque para contas que só registram gastos, sem dinheiro guardado">Patrimônio</th>
               </tr>
             </thead>
             <tbody>
@@ -69,11 +77,27 @@ function Accounts() {
                   <td className={`num ${signClass(a.balance_cents)}`}>
                     {a.type === 'brokerage' ? <span className="muted small">ver Carteira</span> : money(a.balance_cents)}
                   </td>
+                  <td>
+                    {a.type === 'brokerage' ? (
+                      <span className="muted small">pela carteira</span>
+                    ) : (
+                      <label className="small" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!a.in_net_worth}
+                          disabled={toggleNetWorth.isPending}
+                          onChange={() => toggleNetWorth.mutate(a)}
+                          aria-label={`${a.name} entra no patrimônio`}
+                        />
+                        {a.in_net_worth ? 'entra' : <span className="muted">fora</span>}
+                      </label>
+                    )}
+                  </td>
                 </tr>
               ))}
               {!data.length && (
                 <tr>
-                  <td colSpan={3} className="empty">
+                  <td colSpan={4} className="empty">
                     Nenhuma conta.
                   </td>
                 </tr>

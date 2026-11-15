@@ -102,3 +102,20 @@ describe('agregado anual', () => {
     expect(y.by_account[0]).toMatchObject({ name: 'Cartão', expense_cents: 27_000 });
   });
 });
+
+describe('contas fora do patrimônio', () => {
+  it('registram gastos mas não entram no patrimônio; editar outro campo preserva a marcação', async () => {
+    const banco = (await post('/api/accounts', { name: 'Banco', type: 'checking', initial_balance_cents: 1_000_000 })).body;
+    const boletos = (await post('/api/accounts', { name: 'Boletos', type: 'other', in_net_worth: false })).body;
+    expect(boletos.in_net_worth).toBe(0);
+    await post('/api/transactions', { account_id: boletos.id, date: '2026-03-10', description: 'Aluguel', amount_cents: -200_000 });
+
+    const ov = await get('/api/overview');
+    expect(ov.cash_cents).toBe(1_000_000); // só o banco
+    expect((await get('/api/summary/month?month=2026-03')).expense_cents).toBe(200_000); // o gasto continua contando
+
+    await app.inject({ method: 'PATCH', url: `/api/accounts/${boletos.id}`, payload: { name: 'Boletos pagos' } });
+    expect((await get(`/api/accounts/${boletos.id}`)).in_net_worth).toBe(0);
+    expect(banco.in_net_worth).toBe(1);
+  });
+});

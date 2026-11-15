@@ -41,13 +41,13 @@ export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn } = {
       planRoutes(api, db);
       marketRoutes(api, db, { fetch: opts.fetch });
 
-      // Visão geral: saldo das contas do dia a dia + patrimônio na corretora (último snapshot)
+      // Visão geral: saldo das contas do dia a dia que entram no patrimônio + corretora (último snapshot)
       api.get('/overview', async () => {
         const { cash } = db
           .prepare(
             `SELECT COALESCE(SUM(a.initial_balance_cents
                     + COALESCE((SELECT SUM(t.amount_cents) FROM transactions t WHERE t.account_id = a.id), 0)), 0) AS cash
-             FROM accounts a WHERE a.archived = 0 AND a.type <> 'brokerage'`,
+             FROM accounts a WHERE a.archived = 0 AND a.in_net_worth = 1 AND a.type <> 'brokerage'`,
           )
           .get() as { cash: number };
         const { totals, snapshots } = buildPortfolio(db);
