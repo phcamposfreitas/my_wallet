@@ -9,8 +9,8 @@
   dados é a pasta dele, `$(dirname "$WALLET_DB")`, com `research/`, `faturas/` e `backups/`.
   - Sessão aberta antes de a variável existir não a enxerga. Leia do perfil:
     `export WALLET_DB="${WALLET_DB:-$($SHELL -l -c 'printenv WALLET_DB')}"`.
-  - Sem `WALLET_DB`, o servidor e o importador usam `data/wallet.db` do checkout e criam um
-    banco **vazio** se o arquivo não existir. Esse banco não é a carteira: pare e avise.
+  - Sem `WALLET_DB`, o servidor e os importadores usam `data/wallet.db` do checkout e **recusam**
+    abrir se o arquivo não existir. Não contorne com `WALLET_DB_CREATE=1`: pare e avise.
   - Em desenvolvimento (migração nova, servidor de um branch, teste de importador), use uma
     cópia: `sqlite3 -readonly "$WALLET_DB" ".backup <pasta temporária>/wallet.db"` e rode com
     `WALLET_DB=<pasta temporária>/wallet.db`. Migração que ainda não está no `master` nunca roda

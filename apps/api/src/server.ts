@@ -1,9 +1,9 @@
-import { resolve } from 'node:path';
 import { openDb } from './db.ts';
+import { dbPathOrExit } from './db-path.ts';
 import { buildApp } from './app.ts';
 
-// Por padrão o banco fica em <raiz do repo>/data/wallet.db (ignorado pelo git).
-const dbPath = process.env.WALLET_DB ?? resolve(import.meta.dirname, '../../../data/wallet.db');
+// Banco em WALLET_DB (padrão <raiz do repo>/data/wallet.db). Recusa arquivo inexistente; ver db-path.ts.
+const dbPath = dbPathOrExit();
 const port = Number(process.env.API_PORT ?? 3333);
 
 const db = openDb(dbPath);

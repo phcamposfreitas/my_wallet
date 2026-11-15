@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { openDb } from '../db.ts';
+import { dbPathOrExit } from '../db-path.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
 
 const args = process.argv.slice(2);
@@ -28,7 +29,7 @@ if (!files.length) {
   process.exit(1);
 }
 
-const dbPath = process.env.WALLET_DB ?? resolve(import.meta.dirname, '../../../../data/wallet.db');
+const dbPath = dbPathOrExit();
 const db = openDb(dbPath);
 console.log(`Banco: ${dbPath}`);
 
