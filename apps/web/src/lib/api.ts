@@ -36,6 +36,8 @@ export interface Account {
   institution: string | null;
   initial_balance_cents: number;
   archived: number;
+  /** 0 = registra gastos, mas o saldo não entra no patrimônio. */
+  in_net_worth: number;
   balance_cents: number;
 }
 

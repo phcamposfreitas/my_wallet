@@ -227,6 +227,12 @@ const MIGRATIONS: string[] = [
   -- Proveniência da cotação, ex.: 'b3:cotahist'.
   ALTER TABLE prices ADD COLUMN source TEXT;
   `,
+  // v6: contas que não entram no patrimônio
+  `
+  -- 0 = a conta registra gastos mas não é dinheiro guardado (ex.: "Boletos pagos (origem
+  -- variada)", cujos pagamentos já saíram de contas bancárias com saldo próprio).
+  ALTER TABLE accounts ADD COLUMN in_net_worth INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [

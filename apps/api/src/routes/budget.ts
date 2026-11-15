@@ -12,6 +12,8 @@ export const accountSchema = z.object({
   institution: z.string().nullish(),
   initial_balance_cents: z.number().int().default(0),
   archived: z.boolean().default(false),
+  /** false: a conta registra gastos, mas o saldo não entra no patrimônio. */
+  in_net_worth: z.boolean().default(true),
 });
 
 export const categorySchema = z.object({
