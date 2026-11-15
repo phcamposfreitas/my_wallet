@@ -1,8 +1,8 @@
 # My Wallet
 
 Sistema pessoal para gerir finanças: gastos do dia a dia e investimentos num lugar só.
-Roda **localmente**: os dados ficam num SQLite em `data/wallet.db` (ignorado pelo git) e
-a API escuta apenas em `127.0.0.1`.
+Roda **localmente**: os dados ficam num SQLite (por padrão `data/wallet.db`, ignorado pelo
+git) e a API escuta apenas em `127.0.0.1`.
 
 ## Rodando
 
@@ -23,6 +23,11 @@ npm run import:xp -w apps/api -- ~/Downloads
 
 Variáveis opcionais: `WALLET_DB` (caminho do banco), `API_PORT` (padrão 3333).
 
+Recomendado: guarde o banco numa pasta fora do repositório e defina `WALLET_DB` no perfil do
+shell (por exemplo, `~/.zprofile`). Assim todo clone e toda worktree usam o mesmo banco, e
+apagar uma worktree não apaga dados. Sem a variável, cada checkout cria um banco vazio no seu
+próprio `data/`.
+
 ## Estrutura
 
 ```
@@ -41,6 +46,34 @@ apps/web   React 19 + Vite + React Router + TanStack Query
 As faturas em PDF chegam por e-mail. O Claude extrai os lançamentos numa sessão e envia para
 `POST /api/statements/import`, que só grava se a soma fechar com o total da fatura. Contrato e
 passo a passo em [docs/faturas-cartao.md](docs/faturas-cartao.md).
+
+## Casa de investimentos (agentes)
+
+Uma equipe de agentes do Claude Code acompanha a carteira como uma casa de investimentos. São
+sete papéis, cada um com seu arquivo em `.claude/agents/`:
+
+- controladoria;
+- monitoramento diário;
+- macro e renda fixa;
+- research de ações;
+- research de FIIs;
+- risco e compliance;
+- gestão de portfólio.
+
+A sessão principal faz o papel de CIO e conduz os rituais:
+
+| Comando | Quando |
+|---|---|
+| `/rotina-diaria` | todo dia útil, depois do fechamento |
+| `/nova-coleta [pasta]` | quando exportar os CSVs da XP |
+| `/revisar-tese <tese ou ticker>` | depois de um alerta, de resultado trimestral ou de fato relevante |
+| `/comite-investimentos` | uma vez por mês |
+
+Os agentes analisam e preparam decisões, mas não operam nem recomendam. Teses, notas e atas
+ficam em `research/`, na pasta do banco, fora do git.
+
+- Regimento: [docs/investimentos/README.md](docs/investimentos/README.md).
+- O que falta no sistema: [docs/investimentos/avaliacao-sistema.md](docs/investimentos/avaliacao-sistema.md).
 
 ## Princípios do modelo
 
