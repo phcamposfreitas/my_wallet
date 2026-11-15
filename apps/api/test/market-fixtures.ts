@@ -51,11 +51,15 @@ export function quote(f: QuoteFields): string {
   return line;
 }
 
-/** Arquivo completo: cabeçalho, registros e trailer, com CRLF como os da B3. */
-export function cotahistText(quotes: string[], generatedAt = '20261112'): string {
-  const header = txt(`00COTAHIST.${generatedAt.slice(0, 4)}BOVESPA ${generatedAt}`, 245);
-  const trailer = txt(`99COTAHIST.${generatedAt.slice(0, 4)}BOVESPA ${generatedAt}${num(quotes.length + 2, 11)}`, 245);
-  return [header, ...quotes, trailer].join('\r\n') + '\r\n';
+/**
+ * Arquivo completo com CRLF, como os da B3: cabeçalho, registros e trailer. O trailer
+ * conta só os registros tipo 01. `trailerCount: null` omite o trailer (arquivo truncado).
+ */
+export function cotahistText(quotes: string[], opts: { trailerCount?: number | null } = {}): string {
+  const lines = [txt('00COTAHIST.2026BOVESPA 20261112', 245), ...quotes];
+  const count = opts.trailerCount === undefined ? quotes.length : opts.trailerCount;
+  if (count !== null) lines.push(txt(`99COTAHIST.2026BOVESPA 20261112${num(count, 11)}`, 245));
+  return lines.join('\r\n') + '\r\n';
 }
 
 /** ZIP mínimo com uma entrada comprimida (deflate), como os arquivos da B3. */

@@ -42,7 +42,10 @@ for (const f of files) {
   }
   const period = r.first_date === r.last_date ? r.first_date : `${r.first_date} a ${r.last_date} (${r.sessions} pregões)`;
   console.log(`\n[ok] ${r.file}: pregão ${period}`);
-  console.log(`  - ${r.matched} fechamentos: ${r.inserted} novos, ${r.updated} alterados, ${r.unchanged} iguais`);
+  console.log(
+    `  - ${r.matched} fechamentos: ${r.inserted} novos, ${r.updated} alterados, ${r.unchanged} iguais` +
+      (r.ignored ? `, ${r.ignored} ignorado(s)` : ''),
+  );
   if (r.tickers.length) console.log(`  - tickers: ${r.tickers.join(', ')}`);
   if (r.created_assets.length) console.log(`  - cadastrados como referência: ${r.created_assets.join(', ')}`);
   if (r.not_found.length) console.log(`  - sem cotação à vista no arquivo: ${r.not_found.join(', ')}`);

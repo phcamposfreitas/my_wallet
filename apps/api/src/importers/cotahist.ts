@@ -11,18 +11,20 @@ import type { FetchFn } from './sgs.ts';
 /**
  * Cotações históricas da B3 (COTAHIST): texto de largura fixa, registros de 245
  * posições (layout "Séries Históricas" da B3). Tipo 00 = cabeçalho, 01 = cotação de
- * um papel num pregão, 99 = trailer. O diário é COTAHIST_D<DDMMAAAA>.ZIP; o mensal
- * (M<MMAAAA>) e o anual (A<AAAA>) têm o mesmo layout e servem para carregar histórico.
- * O ZIP é lido em fluxo, sem descompactar o arquivo todo na memória.
+ * um papel num pregão, 99 = trailer com o total de registros 01. O diário é
+ * COTAHIST_D<DDMMAAAA>.ZIP; o mensal (M<MMAAAA>) e o anual (A<AAAA>) têm o mesmo layout
+ * e servem para carregar histórico. O ZIP é lido em fluxo, sem descompactar tudo na memória.
  *
  * Regras da importação:
- * - Só o mercado à vista (TPMERC 010). Ficam de fora o fracionário (020), as opções
- *   (070/080) e seus exercícios (012/013), termo (030), leilão (017) e futuros.
+ * - Arquivo sem o trailer está incompleto e é recusado inteiro.
+ * - Só o mercado à vista (TPMERC 010). Todos os outros ficam de fora: fracionário (020),
+ *   opções (070/080) e seus exercícios (012/013), termo (030), 021 etc.
  * - Só tickers cadastrados em assets, mais BOVA11 e XFIX11 (aproximações de Ibovespa
  *   e IFIX), cadastrados como ETF na primeira importação se ainda não existirem.
  * - Grava o fechamento (PREULT) por unidade: preço ÷ fator de cotação (FATCOT,
- *   1 = cotação unitária, 1000 = por lote de mil). Se a divisão deixar fração de
- *   centavo, a cotação é ignorada com aviso em vez de arredondada.
+ *   1 = cotação unitária, 100 ou 1000 = por lote). Se a divisão deixar fração de
+ *   centavo (ex.: direito de subscrição a R$ 0,11 por lote de 100), a cotação é
+ *   ignorada com aviso em vez de arredondada.
  * - Idempotente: upsert por (ativo, pregão).
  */
 
@@ -62,7 +64,7 @@ export async function downloadCotahist(period: string, dir: string, fetchFn: Fet
 
 export interface CotahistQuote {
   date: string; // pregão
-  codbdi: string; // código BDI (02 lote padrão, 12 FII, 96 fracionário...)
+  codbdi: string; // código BDI (ex.: 02 ações, 12 FII, 14 ETF, 96 fracionário)
   ticker: string; // CODNEG
   market: string; // TPMERC (010 à vista, 020 fracionário, 070/080 opções...)
   name: string; // NOMRES
@@ -204,11 +206,13 @@ export interface CotahistReport {
   sessions: number;
   /** Registros de cotação (tipo 01) lidos, de todos os papéis e mercados. */
   quotes_read: number;
-  /** Cotações à vista de tickers acompanhados. */
+  /** Cotações à vista de tickers acompanhados: inserted + updated + unchanged + ignored. */
   matched: number;
   inserted: number;
   updated: number;
   unchanged: number;
+  /** Ignoradas porque o preço por unidade teria fração de centavo (ver warnings). */
+  ignored: number;
   /** Tickers com fechamento gravado. */
   tickers: string[];
   /** Referências (BOVA11, XFIX11) cadastradas em assets nesta importação. */
@@ -231,6 +235,7 @@ function emptyReport(file: string): CotahistReport {
     inserted: 0,
     updated: 0,
     unchanged: 0,
+    ignored: 0,
     tickers: [],
     created_assets: [],
     not_found: [],
@@ -245,11 +250,16 @@ async function scan(path: string, wanted: Set<string>, report: CotahistReport): 
   const quotes = new Map<string, CotahistQuote>();
   const sessions = new Set<string>();
   let header = false;
+  let trailerCount: number | null = null;
   let malformed = 0;
   for await (const line of readCotahistLines(path)) {
     if (!header) {
       if (!line.startsWith('00COTAHIST')) throw new Error('Não é um arquivo COTAHIST da B3 (cabeçalho ausente)');
       header = true;
+      continue;
+    }
+    if (line.startsWith('99')) {
+      trailerCount = Number(line.slice(31, 42)); // TOTAL DE REGISTROS (só os do tipo 01)
       continue;
     }
     if (!line.startsWith('01')) continue;
@@ -268,6 +278,10 @@ async function scan(path: string, wanted: Set<string>, report: CotahistReport): 
     if (!prev || q.volume_cents > prev.volume_cents) quotes.set(key, q);
   }
   if (!header) throw new Error('Arquivo vazio');
+  if (trailerCount === null) throw new Error('Arquivo incompleto: falta o registro final (tipo 99). Baixe de novo.');
+  if (trailerCount !== report.quotes_read) {
+    report.warnings.push(`O registro final indica ${trailerCount} cotações, mas foram lidas ${report.quotes_read}`);
+  }
   if (malformed) report.warnings.push(`${malformed} registro(s) de tickers acompanhados com campos inválidos, ignorado(s)`);
   const days = [...sessions].sort();
   report.sessions = days.length;
@@ -316,6 +330,7 @@ export async function importCotahist(db: DB, path: string): Promise<CotahistRepo
         for (const q of quotes) {
           if (q.close % q.quote_factor !== 0) {
             report.warnings.push(`${q.ticker} ${q.date}: fator de cotação ${q.quote_factor} deixa fração de centavo; cotação ignorada`);
+            report.ignored++;
             continue;
           }
           let assetId = idByTicker.get(q.ticker);

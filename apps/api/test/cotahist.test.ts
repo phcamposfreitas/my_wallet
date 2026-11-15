@@ -127,6 +127,7 @@ describe('importação do COTAHIST', () => {
       quotes_read: QUOTES.length,
       matched: 6, // AAAA3, CCCC11, DDDD3, EEEE3, BOVA11, XFIX11
       inserted: 5,
+      ignored: 1, // EEEE3
       tickers: ['AAAA3', 'BOVA11', 'CCCC11', 'DDDD3', 'XFIX11'],
       created_assets: ['BOVA11', 'XFIX11'],
       not_found: ['FFFF3'],
@@ -193,7 +194,20 @@ describe('importação do COTAHIST', () => {
     const broken = join(dir, 'COTAHIST_CORROMPIDO.ZIP');
     writeFileSync(broken, corrupt);
     expect(await importCotahist(db, broken)).toMatchObject({ status: 'erro', error: expect.stringMatching(/invalid block type/) });
+
+    // TXT cortado no meio: perde o trailer e é recusado inteiro, mesmo com cotações válidas antes do corte.
+    const cut = join(dir, 'COTAHIST_CORTADO.TXT');
+    writeFileSync(cut, cotahistText(QUOTES, { trailerCount: null }), 'latin1');
+    expect(await importCotahist(db, cut)).toMatchObject({ status: 'erro', error: expect.stringMatching(/Arquivo incompleto/) });
     expect(prices()).toEqual({});
+  });
+
+  it('avisa quando o trailer não bate com o número de cotações lidas', async () => {
+    const path = join(dir, 'COTAHIST_CONTAGEM.TXT');
+    writeFileSync(path, cotahistText([quote({ date: DAY, ticker: 'AAAA3', close: 2050 })], { trailerCount: 5 }), 'latin1');
+    const r = await importCotahist(db, path);
+    expect(r.status).toBe('importado');
+    expect(r.warnings).toContain('O registro final indica 5 cotações, mas foram lidas 1');
   });
 
   it('baixa o arquivo do período pedido, sem importar', async () => {
