@@ -7,7 +7,10 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "import:xp": "tsx src/cli/import-xp.ts"
+    "import:xp": "tsx src/cli/import-xp.ts",
+    "import:series": "tsx src/cli/import-series.ts",
+    "import:cotahist": "tsx src/cli/import-cotahist.ts",
+    "download:cotahist": "tsx src/cli/download-cotahist.ts"
   },
   "dependencies": {
     "fastify": "^5.2.0",

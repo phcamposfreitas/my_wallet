@@ -208,6 +208,25 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_plan_items_year ON plan_items(year);
   `,
+  // v5: dados de mercado (séries do Banco Central e cotações da B3)
+  `
+  -- Séries temporais em formato longo: uma linha por (código, data). A importação
+  -- é idempotente (upsert pela chave) e o valor fica na unidade da fonte; unidade e
+  -- descrição de cada código vão para indicators (table_name = 'series').
+  -- Séries mensais (IPCA) usam o 1º dia do mês de referência.
+  CREATE TABLE series (
+    code TEXT NOT NULL,                   -- ex.: 'CDI', 'IPCA', 'DOLAR_PTAX'
+    date TEXT NOT NULL,
+    value REAL NOT NULL,
+    source TEXT NOT NULL,                 -- ex.: 'bcb-sgs:12'
+    collected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (code, date)
+  );
+
+  -- prices (v1) guarda o fechamento por ativo e pregão, em centavos por unidade.
+  -- Proveniência da cotação, ex.: 'b3:cotahist'.
+  ALTER TABLE prices ADD COLUMN source TEXT;
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
@@ -252,6 +271,19 @@ function migrate(db: DB) {
       db.exec('ROLLBACK');
       throw err;
     }
+  }
+}
+
+/** Executa `fn` numa transação; desfaz tudo se lançar erro. */
+export function inTransaction<T>(db: DB, fn: () => T): T {
+  db.exec('BEGIN');
+  try {
+    const out = fn();
+    db.exec('COMMIT');
+    return out;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
 

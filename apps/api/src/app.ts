@@ -6,9 +6,12 @@ import { investmentRoutes } from './routes/investments.ts';
 import { statementRoutes } from './routes/statements.ts';
 import { ruleRoutes } from './routes/rules.ts';
 import { planRoutes } from './routes/plan.ts';
+import { marketRoutes } from './routes/market.ts';
 import { buildPortfolio } from './snapshots.ts';
+import type { FetchFn } from './importers/sgs.ts';
 
-export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
+/** `fetch` substitui o acesso à rede nas importações de séries (usado nos testes). */
+export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn } = {}) {
   // bodyLimit maior: uma fatura extraída pode ter centenas de lançamentos.
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
 
@@ -36,6 +39,7 @@ export function buildApp(db: DB, opts: { logger?: boolean } = {}) {
       statementRoutes(api, db);
       ruleRoutes(api, db);
       planRoutes(api, db);
+      marketRoutes(api, db, { fetch: opts.fetch });
 
       // Visão geral: saldo das contas do dia a dia + patrimônio na corretora (último snapshot)
       api.get('/overview', async () => {
