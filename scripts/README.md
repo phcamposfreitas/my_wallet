@@ -31,7 +31,7 @@ PDF com senha ──desbloquear──▶ PDF aberto ──pdftotext──▶ tex
    ```bash
    python3 scripts/parse_nubank.py /tmp/nu-2026-05.txt 2026-05 /tmp/nu-2026-05.json
    python3 scripts/parse_xp.py     /tmp/xp-2026-05.txt /tmp/xp-2026-05.json
-   python3 scripts/parse_itau.py   /tmp/itau-2026-05.txt "Itaú Uniclass 1808" /tmp/itau-2026-05.json
+   python3 scripts/parse_itau.py   /tmp/itau-2026-05.txt "<nome da conta>" /tmp/itau-2026-05.json
    ```
 
 4. **Simular e gravar** na API (contrato em `docs/faturas-cartao.md`):
