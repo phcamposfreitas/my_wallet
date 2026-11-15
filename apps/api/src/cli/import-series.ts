@@ -4,9 +4,9 @@
  * série continua da última data gravada. Sem --series, importa todas:
  * CDI (SGS 12), SELIC (11), SELIC_META (432), IPCA (433), IPCA_12M (13522), DOLAR_PTAX (1).
  */
-import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { openDb } from '../db.ts';
+import { dbPathOrExit } from '../db-path.ts';
 import { isIsoDate } from '../dates.ts';
 import { findSeries, importSeries, SGS_SERIES } from '../importers/sgs.ts';
 
@@ -32,7 +32,7 @@ const codes = args.series?.split(',').filter((c) => c.trim());
 for (const c of codes ?? []) if (!findSeries(c)) fail(`Série desconhecida: ${c}. Disponíveis: ${SGS_SERIES.map((s) => s.code).join(', ')}`);
 
 // Argumentos validados antes de abrir o banco: abrir aplica as migrações pendentes.
-const dbPath = process.env.WALLET_DB ?? resolve(import.meta.dirname, '../../../../data/wallet.db');
+const dbPath = dbPathOrExit();
 const db = openDb(dbPath);
 console.log(`Banco: ${dbPath}`);
 

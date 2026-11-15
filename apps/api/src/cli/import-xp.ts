@@ -7,6 +7,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { openDb } from '../db.ts';
+import { dbPathOrExit } from '../db-path.ts';
 import { importXpFiles } from '../importers/xp.ts';
 
 const WANTED = /^(dim_ativo|dim_indicador|carteira.*|fato_provento)\.csv$/i;
@@ -24,7 +25,7 @@ const paths = args.flatMap((a) => {
     : [p];
 });
 
-const dbPath = process.env.WALLET_DB ?? resolve(import.meta.dirname, '../../../../data/wallet.db');
+const dbPath = dbPathOrExit();
 const db = openDb(dbPath);
 const reports = importXpFiles(
   db,

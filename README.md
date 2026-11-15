@@ -21,12 +21,21 @@ Importar os CSVs da XP (também dá pela interface em **Carteira → Importar**)
 npm run import:xp -w apps/api -- ~/Downloads
 ```
 
-Variáveis opcionais: `WALLET_DB` (caminho do banco), `API_PORT` (padrão 3333).
+Variáveis: `WALLET_DB` (caminho do banco; padrão `data/wallet.db` do checkout), `API_PORT`
+(padrão 3333) e `WALLET_DB_CREATE`.
 
 Recomendado: guarde o banco numa pasta fora do repositório e defina `WALLET_DB` no perfil do
 shell (por exemplo, `~/.zprofile`). Assim todo clone e toda worktree usam o mesmo banco, e
-apagar uma worktree não apaga dados. Sem a variável, cada checkout cria um banco vazio no seu
-próprio `data/`.
+apagar uma worktree não apaga dados.
+
+O servidor e os importadores (`import:xp`, `import:series`, `import:cotahist`) **recusam** abrir
+um banco que não existe: saem com código 1 e mostram o caminho tentado, em vez de criar um
+banco vazio em silêncio (o que faria parecer que os dados sumiram). Para criar um banco novo
+de propósito, rode com `WALLET_DB_CREATE=1`:
+
+```bash
+WALLET_DB=~/meus-dados/wallet.db WALLET_DB_CREATE=1 npm run dev
+```
 
 ## Estrutura
 
