@@ -1,8 +1,10 @@
 # Scripts de importação de faturas
 
 Ferramentas locais para levar as faturas em PDF (baixadas do e-mail para
-`data/faturas/<cartão>/`, fora do git) até a API. Nenhum script guarda senha
-nem dado pessoal: tudo vem dos PDFs e da senha que você digita.
+`faturas/<cartão>/`, na pasta do banco, fora do git) até a API. Nenhum script
+guarda senha nem dado pessoal: tudo vem dos PDFs e da senha que você digita.
+
+Nos exemplos, `F="$(dirname "$WALLET_DB")/faturas"`.
 
 ## Fluxo
 
@@ -14,13 +16,13 @@ PDF com senha ──desbloquear──▶ PDF aberto ──pdftotext──▶ tex
    oculta e grava cópias em `<pasta>/aberto/`. Uma tentativa por arquivo, sem adivinhar.
 
    ```bash
-   .venv/bin/python scripts/desbloquear-fatura.py data/faturas/xp
+   .venv/bin/python scripts/desbloquear-fatura.py "$F/xp"
    ```
 
 2. **Extrair o texto** com `pdftotext` (poppler) preservando o layout:
 
    ```bash
-   pdftotext -layout data/faturas/xp/aberto/2026-05.pdf /tmp/xp-2026-05.txt
+   pdftotext -layout "$F/xp/aberto/2026-05.pdf" /tmp/xp-2026-05.txt
    ```
 
 3. **Converter em payload** com o parser do banco. Cada um imprime um resumo da

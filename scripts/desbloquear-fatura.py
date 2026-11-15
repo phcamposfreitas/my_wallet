@@ -14,10 +14,11 @@ Uso:
 
 Exemplos:
     # uma pasta inteira (todas com a mesma senha); grava em <pasta>/aberto/
-    python3 scripts/desbloquear-fatura.py data/faturas/xp
+    F="$(dirname "$WALLET_DB")/faturas"
+    python3 scripts/desbloquear-fatura.py "$F/xp"
 
     # um arquivo, escolhendo a pasta de saída
-    python3 scripts/desbloquear-fatura.py data/faturas/xp/2026-02.pdf --saida /tmp/abertas
+    python3 scripts/desbloquear-fatura.py "$F/xp/2026-02.pdf" --saida /tmp/abertas
 
 Requer o venv do projeto:  .venv/bin/python scripts/desbloquear-fatura.py ...
 (ou  pip install pypdf  no seu Python)
