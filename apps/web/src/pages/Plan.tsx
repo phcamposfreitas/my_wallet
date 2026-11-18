@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type Category, type Plan, type PlanItem, type PlanKind, type PlanSuggestion } from '../lib/api';
+import { api, type Category, type IncomeEstimate, type Plan, type PlanItem, type PlanKind, type PlanSuggestion } from '../lib/api';
 import { money, parseMoney } from '../lib/format';
 import { Kpi, Loading } from '../components/ui';
 
@@ -18,6 +18,7 @@ export default function PlanPage() {
     queryKey: ['plan-sugg', year],
     queryFn: () => api.get<{ suggestions: PlanSuggestion[] }>(`/plan/suggestions?base_year=${year - 1}&target_year=${year}`),
   });
+  const estimate = useQuery({ queryKey: ['plan-income-estimate'], queryFn: () => api.get<IncomeEstimate>('/plan/income-estimate') });
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories') });
 
   const refresh = () => {
@@ -46,7 +47,12 @@ export default function PlanPage() {
   const p = plan.data;
   const t = p.totals;
   const hasRealized = t.realized_monthly.some((v) => v > 0);
-  const max = Math.max(1, ...t.monthly, ...t.realized_monthly);
+  const hasIncome = p.income_items.length > 0;
+  const hasIncomeRealized = t.income_realized_monthly.some((v) => v > 0);
+  const max = Math.max(1, ...t.monthly, ...t.realized_monthly, ...t.income_monthly);
+  const est = estimate.data;
+  const canAddEstimate = !!est && est.amount_cents > 0 && !p.income_items.some((i) => i.source === 'proventos');
+  const short = (c: number) => money(c).replace(/,\d+$/, '');
   const suggestions = sugg.data?.suggestions ?? [];
 
   return (
@@ -54,7 +60,7 @@ export default function PlanPage() {
       <div className="page-head">
         <div>
           <h1>Planejamento de {year}</h1>
-          <p className="subtitle">Gastos previstos: contas fixas, contas variáveis e parcelas que já estão contratadas</p>
+          <p className="subtitle">Receitas previstas e gastos previstos: contas fixas, contas variáveis e parcelas que já estão contratadas</p>
         </div>
         <div className="month-nav">
           <button onClick={() => setYear(year - 1)} aria-label="Ano anterior">‹</button>
@@ -65,38 +71,136 @@ export default function PlanPage() {
 
       <div className="stack">
         <div className="grid kpis" style={{ marginBottom: 0 }}>
-          <Kpi label="Previsto no ano" value={money(t.annual_cents)} hint={`${p.items.length} itens no plano`} />
-          <Kpi label="Média mensal" value={money(t.monthly_avg_cents)} />
+          <Kpi label="Receitas previstas no ano" value={money(t.income_annual_cents)} hint={`${money(Math.round(t.income_annual_cents / 12))} por mês`} />
+          <Kpi label="Gastos previstos no ano" value={money(t.annual_cents)} hint={`${money(t.monthly_avg_cents)} por mês · ${p.items.length} itens`} />
+          <Kpi label="Saldo previsto no ano" value={money(t.balance_annual_cents)} hint={`${money(Math.round(t.balance_annual_cents / 12))} por mês`} />
           <Kpi label="Fixos" value={money(t.by_kind.fixo)} hint={`Variáveis ${money(t.by_kind.variavel)}`} />
           <Kpi label="Parcelas já contratadas" value={money(t.by_kind.parcelamento)} />
         </div>
 
         <div className="card">
-          <h2>Previsto por mês{hasRealized ? ' × realizado' : ''}</h2>
-          <div className="cols-chart" style={{ height: 180 }} role="img" aria-label="Previsto por mês">
+          <h2>{hasIncome ? 'Receitas × gastos previstos por mês' : `Gastos previstos por mês${hasRealized ? ' × realizado' : ''}`}</h2>
+          <div className="cols-chart" style={{ height: 180 }} role="img" aria-label="Receitas e gastos previstos por mês; os valores estão na tabela abaixo">
             {t.monthly.map((v, i) => (
-              <div className="col" key={i} title={`${MES[i]}: previsto ${money(v)}${hasRealized ? ` · realizado ${money(t.realized_monthly[i])}` : ''}`}>
-                <span className="col-label">{v ? money(v).replace(/,\d+$/, '') : ''}</span>
+              <div
+                className="col"
+                key={i}
+                title={`${MES[i]}: ${hasIncome ? `receitas ${money(t.income_monthly[i])} · ` : ''}gastos ${money(v)}${hasRealized ? ` · gasto realizado ${money(t.realized_monthly[i])}` : ''}${hasIncome ? ` · saldo ${money(t.balance_monthly[i])}` : ''}`}
+              >
+                {hasIncome ? (
+                  <span className="col-label" style={{ color: t.balance_monthly[i] < 0 ? 'var(--neg)' : 'var(--pos)', fontWeight: 600 }}>
+                    {t.balance_monthly[i] > 0 ? '+' : ''}{short(t.balance_monthly[i]).replace(/R\$\s*/, '')}
+                  </span>
+                ) : (
+                  <span className="col-label">{v ? short(v) : ''}</span>
+                )}
                 <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', width: '100%', justifyContent: 'center', height: '100%' }}>
+                  {hasIncome && <div className="col-bar" style={{ height: `${(t.income_monthly[i] / max) * 100}%`, background: 'var(--pos)' }} />}
                   <div className="col-bar" style={{ height: `${(v / max) * 100}%` }} />
                   {hasRealized && (
-                    <div className="col-bar" style={{ height: `${(t.realized_monthly[i] / max) * 100}%`, background: 'var(--pos)' }} />
+                    <div className="col-bar" style={{ height: `${(t.realized_monthly[i] / max) * 100}%`, background: 'var(--muted)' }} />
                   )}
                 </div>
                 <span className="col-label">{MES[i]}</span>
               </div>
             ))}
           </div>
-          {hasRealized && (
-            <div className="legend">
-              <span><span className="dot" style={{ background: 'var(--accent)' }} />Previsto</span>
-              <span><span className="dot" style={{ background: 'var(--pos)' }} />Realizado (pelo padrão de cada item)</span>
+          <div className="legend">
+            {hasIncome && <span><span className="dot" style={{ background: 'var(--pos)' }} />Receitas previstas</span>}
+            <span><span className="dot" style={{ background: 'var(--accent)' }} />Gastos previstos</span>
+            {hasRealized && <span><span className="dot" style={{ background: 'var(--muted)' }} />Gasto realizado (pelo padrão de cada item)</span>}
+            {hasIncome && <span className="muted">Acima de cada mês: saldo previsto</span>}
+          </div>
+          {hasIncome && (
+            <div className="table-wrap" style={{ marginTop: 12 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th />
+                    {MES.map((m) => <th className="num" key={m}>{m}</th>)}
+                    <th className="num">Ano</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Receitas</td>
+                    {t.income_monthly.map((v, i) => <td className="num small" key={i}>{short(v)}</td>)}
+                    <td className="num">{short(t.income_annual_cents)}</td>
+                  </tr>
+                  <tr>
+                    <td>Gastos</td>
+                    {t.monthly.map((v, i) => <td className="num small" key={i}>{short(v)}</td>)}
+                    <td className="num">{short(t.annual_cents)}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Saldo</strong></td>
+                    {t.balance_monthly.map((v, i) => (
+                      <td className="num small" key={i} style={{ color: v < 0 ? 'var(--neg)' : 'var(--pos)' }}>{short(v)}</td>
+                    ))}
+                    <td className="num" style={{ color: t.balance_annual_cents < 0 ? 'var(--neg)' : 'var(--pos)' }}><strong>{short(t.balance_annual_cents)}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
         <div className="card">
-          <h2>Itens do plano</h2>
+          <div className="page-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Receitas previstas</h2>
+              <p className="small muted" style={{ margin: '4px 0 0' }}>Entradas com que você conta em {year}: trabalho, aluguéis e renda da carteira.</p>
+            </div>
+            {canAddEstimate && (
+              <button
+                disabled={add.isPending}
+                onClick={() =>
+                  add.mutate({
+                    year,
+                    direction: 'income',
+                    source: 'proventos',
+                    kind: 'variavel',
+                    name: 'Rendimentos da carteira (estimativa)',
+                    amount_cents: est.amount_cents,
+                    notes: `estimativa: ${est.evidence}`,
+                  })
+                }
+              >
+                Adicionar rendimentos da carteira (≈ {money(est.amount_cents)}/mês)
+              </button>
+            )}
+          </div>
+          {!hasIncome ? (
+            <div className="empty">Nenhuma receita prevista ainda.</div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Receita</th>
+                    <th>Tipo</th>
+                    <th className="num">Por mês</th>
+                    <th>Meses</th>
+                    <th className="num">No ano</th>
+                    {hasIncomeRealized && <th className="num">Realizado</th>}
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {p.income_items.map((i) => (
+                    <ItemRow key={i.id} item={i} income showRealized={hasIncomeRealized} onSave={(body) => patch.mutate({ id: i.id, body })} onDelete={() => confirm(`Remover "${i.name}" do plano?`) && remove.mutate(i.id)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ marginTop: 12 }}>
+            <NewIncome year={year} onAdd={(b) => add.mutate(b)} />
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Gastos previstos</h2>
           {!p.items.length ? (
             <div className="empty">Nenhum item ainda. Adicione a partir das sugestões abaixo ou manualmente.</div>
           ) : (
@@ -175,7 +279,7 @@ export default function PlanPage() {
         </div>
 
         <div className="card">
-          <h2>Adicionar manualmente</h2>
+          <h2>Adicionar gasto manualmente</h2>
           {categories.data && <NewItem year={year} categories={categories.data} onAdd={(b) => add.mutate(b)} />}
           {add.error && <p className="error small">{(add.error as Error).message}</p>}
         </div>
@@ -184,7 +288,7 @@ export default function PlanPage() {
   );
 }
 
-function ItemRow({ item, showRealized, onSave, onDelete }: { item: PlanItem; showRealized: boolean; onSave: (b: unknown) => void; onDelete: () => void }) {
+function ItemRow({ item, income, showRealized, onSave, onDelete }: { item: PlanItem; income?: boolean; showRealized: boolean; onSave: (b: unknown) => void; onDelete: () => void }) {
   const [value, setValue] = useState((item.amount_cents / 100).toFixed(2).replace('.', ','));
   const commit = () => {
     const c = parseMoney(value);
@@ -197,17 +301,19 @@ function ItemRow({ item, showRealized, onSave, onDelete }: { item: PlanItem; sho
         {item.notes && <div className="small muted" style={{ whiteSpace: 'normal', maxWidth: 320 }}>{item.notes}</div>}
       </td>
       <td><span className={`badge ${item.kind === 'fixo' ? 'accent' : item.kind === 'variavel' ? 'warn' : ''}`}>{KIND_LABEL[item.kind]}</span></td>
-      <td>
-        {item.category_name ? (
-          <><span className="dot" style={{ background: item.color ?? 'var(--muted)' }} />{item.category_name}</>
-        ) : <span className="muted">—</span>}
-      </td>
+      {!income && (
+        <td>
+          {item.category_name ? (
+            <><span className="dot" style={{ background: item.color ?? 'var(--muted)' }} />{item.category_name}</>
+          ) : <span className="muted">—</span>}
+        </td>
+      )}
       <td className="num">
         <input value={value} onChange={(e) => setValue(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} inputMode="decimal" style={{ width: 100, textAlign: 'right' }} aria-label={`Valor mensal de ${item.name}`} />
       </td>
       <td className="small">{monthsLabel(item.months)}</td>
       <td className="num">{money(item.annual_cents)}</td>
-      {showRealized && <td className="num muted">{item.match_pattern ? money(item.realized_cents) : '—'}</td>}
+      {showRealized && <td className="num muted">{item.match_pattern || item.source ? money(item.realized_cents) : '—'}</td>}
       <td><button className="ghost" title="Remover" onClick={onDelete}>✕</button></td>
     </tr>
   );
@@ -247,6 +353,30 @@ function NewItem({ year, categories, onAdd }: { year: number; categories: Catego
       <label className="field">Por mês (R$)<input value={f.amount} onChange={set('amount')} required inputMode="decimal" placeholder="0,00" style={{ width: 100 }} /></label>
       <label className="field" style={{ flex: '1 1 160px' }}>Padrão p/ realizado (opcional)<input value={f.pattern} onChange={set('pattern')} placeholder="trecho da descrição" /></label>
       <button className="primary">Adicionar</button>
+    </form>
+  );
+}
+
+function NewIncome({ year, onAdd }: { year: number; onAdd: (b: unknown) => void }) {
+  const [f, setF] = useState({ name: '', kind: 'fixo', amount: '' });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const c = parseMoney(f.amount);
+    if (!c || c <= 0) return;
+    onAdd({ year, direction: 'income', name: f.name, kind: f.kind, amount_cents: c });
+    setF({ name: '', kind: 'fixo', amount: '' });
+  };
+  return (
+    <form className="inline" onSubmit={submit}>
+      <label className="field" style={{ flex: '1 1 180px' }}>Receita<input value={f.name} onChange={set('name')} required placeholder="Ex.: Aluguel recebido" /></label>
+      <label className="field">Tipo
+        <select value={f.kind} onChange={set('kind')}>
+          <option value="fixo">Fixo</option><option value="variavel">Variável</option>
+        </select>
+      </label>
+      <label className="field">Por mês (R$)<input value={f.amount} onChange={set('amount')} required inputMode="decimal" placeholder="0,00" style={{ width: 100 }} /></label>
+      <button className="primary">Adicionar receita</button>
     </form>
   );
 }

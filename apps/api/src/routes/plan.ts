@@ -6,14 +6,17 @@ import { merchantKey } from './budget.ts';
 import { normalizeText } from './rules.ts';
 
 /**
- * Planejamento de gastos por ano: itens previstos (fixos, variáveis e parcelamentos),
- * comparados ao realizado pelo padrão de descrição, e sugestões tiradas do ano anterior.
+ * Planejamento por ano: gastos previstos (fixos, variáveis e parcelamentos) e receitas
+ * previstas, comparados ao realizado, e sugestões tiradas do ano anterior.
  */
 
 const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const kindEnum = z.enum(['fixo', 'variavel', 'parcelamento']);
 
 const itemSchema = z.object({
+  direction: z.enum(['expense', 'income']).default('expense'),
+  /** 'proventos': o realizado vem dos proventos da carteira, não dos lançamentos. */
+  source: z.enum(['proventos']).nullish(),
   year: z.number().int().min(2000).max(2100),
   name: z.string().trim().min(1),
   category_id: z.number().int().positive().nullish(),
@@ -32,6 +35,8 @@ interface ItemRow {
   category_name: string | null;
   color: string | null;
   kind: string;
+  direction: 'expense' | 'income';
+  source: string | null;
   amount_cents: number;
   months: string;
   match_pattern: string | null;
@@ -79,12 +84,16 @@ export function buildPlan(db: DB, year: number) {
     .all(`${year}-01-01`, `${year + 1}-01-01`) as { description: string; amount_cents: number; m: number }[];
   const normTx = txs.map((t) => ({ ...t, norm: normalizeText(t.description) }));
 
-  const out = items.map((i) => {
+  const proventos = incomeByMonth(db, `${year}-01-01`, `${year + 1}-01-01`);
+
+  const all = items.map((i) => {
     const planned = ALL_MONTHS.map((m) => (i.months.includes(m) ? i.amount_cents : 0));
     const pattern = i.match_pattern ? normalizeText(i.match_pattern) : null;
-    const realized = ALL_MONTHS.map((m) =>
-      pattern ? normTx.filter((t) => t.m === m && t.norm.includes(pattern)).reduce((s, t) => s - t.amount_cents, 0) : 0,
-    );
+    const sign = i.direction === 'income' ? 1 : -1; // gasto é negativo no lançamento; receita, positiva
+    const realized = ALL_MONTHS.map((m) => {
+      if (i.source === 'proventos') return proventos.get(year * 12 + m - 1) ?? 0;
+      return pattern ? normTx.filter((t) => t.m === m && t.norm.includes(pattern)).reduce((s, t) => s + sign * t.amount_cents, 0) : 0;
+    });
     return {
       ...i,
       planned,
@@ -93,6 +102,11 @@ export function buildPlan(db: DB, year: number) {
       realized_cents: realized.reduce((s, v) => s + v, 0),
     };
   });
+
+  const out = all.filter((i) => i.direction === 'expense');
+  const income = all.filter((i) => i.direction === 'income');
+  const incomeMonthly = ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.planned[k], 0));
+  const incomeAnnual = incomeMonthly.reduce((s, v) => s + v, 0);
 
   const monthly = ALL_MONTHS.map((_, k) => out.reduce((s, i) => s + i.planned[k], 0));
   const byCategory = new Map<string, { category: string; color: string | null; annual_cents: number }>();
@@ -109,7 +123,13 @@ export function buildPlan(db: DB, year: number) {
   return {
     year,
     items: out,
+    income_items: income,
     totals: {
+      income_annual_cents: incomeAnnual,
+      income_monthly: incomeMonthly,
+      income_realized_monthly: ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.realized[k], 0)),
+      balance_monthly: ALL_MONTHS.map((_, k) => incomeMonthly[k] - monthly[k]),
+      balance_annual_cents: incomeAnnual - monthly.reduce((s, v) => s + v, 0),
       annual_cents: monthly.reduce((s, v) => s + v, 0),
       monthly_avg_cents: Math.round(monthly.reduce((s, v) => s + v, 0) / 12),
       monthly,
@@ -117,6 +137,44 @@ export function buildPlan(db: DB, year: number) {
       by_kind: byKind,
       by_category: [...byCategory.values()].sort((a, b) => b.annual_cents - a.annual_cents),
     },
+  };
+}
+
+/** Proventos recebidos por mês (chave ano*12+mês-1). Amortização é devolução de capital, não renda. */
+function incomeByMonth(db: DB, start: string, end: string) {
+  const rows = db
+    .prepare(
+      `SELECT substr(date, 1, 7) AS m, SUM(amount_cents) AS total FROM asset_income
+       WHERE type <> 'amortizacao' AND date >= ? AND date < ? GROUP BY m`,
+    )
+    .all(start, end) as { m: string; total: number }[];
+  return new Map(rows.map((r) => [ym(`${r.m}-01`), r.total]));
+}
+
+/**
+ * Estimativa de renda mensal da carteira: média dos proventos recebidos nos últimos
+ * meses completos (até 12). O primeiro mês com dados e o mês corrente ficam de fora,
+ * porque podem estar incompletos.
+ */
+export function estimatePortfolioIncome(db: DB, today = new Date().toISOString().slice(0, 10)) {
+  const byMonth = incomeByMonth(db, '0000-01-01', '9999-12-31');
+  const current = ym(today);
+  const seen = [...byMonth.keys()].filter((k) => k <= current).sort((a, b) => a - b);
+  if (!seen.length) return { amount_cents: 0, months_used: 0, from: null, to: null, evidence: 'sem proventos registrados' };
+  let first = seen[0] + 1;
+  let last = Math.min(seen[seen.length - 1], current - 1);
+  if (last < first) [first, last] = [seen[0], seen[seen.length - 1]]; // histórico curto: usa o que tem
+  first = Math.max(first, last - 11);
+  const n = last - first + 1;
+  let total = 0;
+  for (let k = first; k <= last; k++) total += byMonth.get(k) ?? 0;
+  const label = (k: number) => `${String((k % 12) + 1).padStart(2, '0')}/${Math.floor(k / 12)}`;
+  return {
+    amount_cents: Math.round(total / n),
+    months_used: n,
+    from: label(first),
+    to: label(last),
+    evidence: `média dos proventos recebidos de ${label(first)} a ${label(last)} (${n} ${n === 1 ? 'mês' : 'meses'})`,
   };
 }
 
@@ -148,7 +206,7 @@ export function suggestPlan(db: DB, baseYear: number, targetYear: number) {
   if (!txs.length) return { base_year: baseYear, target_year: targetYear, suggestions: [] };
 
   const lastDataMonth = Math.max(...txs.map((t) => ym(t.date)));
-  const existing = (db.prepare('SELECT match_pattern FROM plan_items WHERE year = ?').all(targetYear) as { match_pattern: string | null }[])
+  const existing = (db.prepare("SELECT match_pattern FROM plan_items WHERE year = ? AND direction = 'expense'").all(targetYear) as { match_pattern: string | null }[])
     .map((r) => (r.match_pattern ? normalizeText(r.match_pattern) : ''))
     .filter(Boolean);
   const alreadyPlanned = (key: string) => existing.some((p) => normalizeText(key).includes(p) || p.includes(normalizeText(key)));
@@ -272,6 +330,8 @@ export function planRoutes(app: FastifyInstance, db: DB) {
     return suggestPlan(db, q.base_year, q.target_year);
   });
 
+  app.get('/plan/income-estimate', async () => estimatePortfolioIncome(db));
+
   const getItem = (id: number) => db.prepare('SELECT * FROM plan_items WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   const toRow = (i: Partial<z.infer<typeof itemSchema>>) => ({
     ...i,
@@ -282,15 +342,15 @@ export function planRoutes(app: FastifyInstance, db: DB) {
     const body = z.union([itemSchema, z.array(itemSchema).min(1)]).parse(req.body);
     const list = Array.isArray(body) ? body : [body];
     const ins = db.prepare(
-      `INSERT INTO plan_items (year, name, category_id, kind, amount_cents, months, match_pattern, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO plan_items (year, name, category_id, kind, amount_cents, months, match_pattern, notes, direction, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const ids: number[] = [];
     db.exec('BEGIN');
     try {
       for (const i of list) {
         const r = toRow(i);
-        ids.push(Number(ins.run(i.year, i.name, i.category_id ?? null, i.kind, i.amount_cents, r.months!, i.match_pattern ?? null, i.notes ?? null).lastInsertRowid));
+        ids.push(Number(ins.run(i.year, i.name, i.category_id ?? null, i.kind, i.amount_cents, r.months!, i.match_pattern ?? null, i.notes ?? null, i.direction, i.source ?? null).lastInsertRowid));
       }
       db.exec('COMMIT');
     } catch (e) {

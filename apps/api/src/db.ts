@@ -233,6 +233,12 @@ const MIGRATIONS: string[] = [
   -- variada)", cujos pagamentos já saíram de contas bancárias com saldo próprio).
   ALTER TABLE accounts ADD COLUMN in_net_worth INTEGER NOT NULL DEFAULT 1;
   `,
+  // v7: receitas previstas no planejamento
+  `
+  ALTER TABLE plan_items ADD COLUMN direction TEXT NOT NULL DEFAULT 'expense' CHECK (direction IN ('expense','income'));
+  -- De onde vem o realizado: NULL = lançamentos (pelo padrão); 'proventos' = proventos da carteira (asset_income).
+  ALTER TABLE plan_items ADD COLUMN source TEXT CHECK (source IN ('proventos'));
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
