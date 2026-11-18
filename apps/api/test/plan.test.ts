@@ -77,3 +77,42 @@ describe('plano do ano', () => {
     expect((await req('POST', '/api/plan/items', { year: 2026, name: 'X', amount_cents: 0 })).status).toBe(400);
   });
 });
+
+describe('receitas previstas', () => {
+  it('ficam separadas dos gastos, entram no saldo e não mexem nos totais de gasto', async () => {
+    await req('POST', '/api/plan/items', [
+      { year: 2027, name: 'Aluguel', amount_cents: 200_000 },
+      { year: 2027, name: 'Projeto', direction: 'income', amount_cents: 300_000 },
+      { year: 2027, name: 'Bônus', direction: 'income', amount_cents: 100_000, months: [12] },
+    ]);
+    const p = (await req('GET', '/api/plan?year=2027')).body;
+    expect(p.items.map((i: { name: string }) => i.name)).toEqual(['Aluguel']);
+    expect(p.income_items).toHaveLength(2);
+    expect(p.totals.annual_cents).toBe(2_400_000);
+    expect(p.totals.income_annual_cents).toBe(3_700_000);
+    expect(p.totals.balance_monthly[0]).toBe(100_000);
+    expect(p.totals.balance_monthly[11]).toBe(200_000);
+    expect(p.totals.balance_annual_cents).toBe(1_300_000);
+  });
+
+  it('estima a renda da carteira pelos meses completos e mostra os proventos como realizado', async () => {
+    const { estimatePortfolioIncome } = await import('../src/routes/plan.ts');
+    const db = openDb(':memory:');
+    app = buildApp(db);
+    const acc = (await req('POST', '/api/accounts', { name: 'XP', type: 'brokerage' })).body.id;
+    const asset = (await req('POST', '/api/assets', { ticker: 'ABCD11', asset_class: 'fii' })).body.id;
+    const ins = db.prepare('INSERT INTO asset_income (account_id, asset_id, date, type, amount_cents) VALUES (?, ?, ?, ?, ?)');
+    ins.run(acc, asset, '2026-05-28', 'rendimento_fii', 1_000); // primeiro mês: pode estar incompleto
+    ins.run(acc, asset, '2026-06-10', 'rendimento_fii', 30_000);
+    ins.run(acc, asset, '2026-07-10', 'rendimento_fii', 50_000);
+    ins.run(acc, asset, '2026-07-11', 'amortizacao', 900_000); // devolução de capital não é renda
+    ins.run(acc, asset, '2026-08-05', 'rendimento_fii', 2_000); // mês corrente: incompleto
+
+    const est = estimatePortfolioIncome(db, '2026-08-17');
+    expect(est).toMatchObject({ amount_cents: 40_000, months_used: 2, from: '06/2026', to: '07/2026' });
+
+    await req('POST', '/api/plan/items', { year: 2026, name: 'Carteira', direction: 'income', source: 'proventos', amount_cents: est.amount_cents });
+    const p = (await req('GET', '/api/plan?year=2026')).body;
+    expect(p.income_items[0].realized.slice(4, 8)).toEqual([1_000, 30_000, 50_000, 2_000]);
+  });
+});

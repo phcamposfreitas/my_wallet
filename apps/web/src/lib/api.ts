@@ -196,6 +196,8 @@ export interface PlanItem {
   category_name: string | null;
   color: string | null;
   kind: PlanKind;
+  direction: 'expense' | 'income';
+  source: 'proventos' | null;
   amount_cents: number;
   months: number[];
   match_pattern: string | null;
@@ -209,7 +211,13 @@ export interface PlanItem {
 export interface Plan {
   year: number;
   items: PlanItem[];
+  income_items: PlanItem[];
   totals: {
+    income_annual_cents: number;
+    income_monthly: number[];
+    income_realized_monthly: number[];
+    balance_monthly: number[];
+    balance_annual_cents: number;
     annual_cents: number;
     monthly_avg_cents: number;
     monthly: number[];
@@ -217,6 +225,12 @@ export interface Plan {
     by_kind: Record<PlanKind, number>;
     by_category: { category: string; color: string | null; annual_cents: number }[];
   };
+}
+
+export interface IncomeEstimate {
+  amount_cents: number;
+  months_used: number;
+  evidence: string;
 }
 
 export interface PlanSuggestion {

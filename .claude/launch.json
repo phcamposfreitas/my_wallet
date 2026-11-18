@@ -4,7 +4,19 @@
     {
       "name": "my-wallet",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "my-wallet-copia",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "WALLET_DB=\"$PWD/data/dev-copia.db\" exec npm run dev"
+      ],
       "port": 5173
     }
   ]
