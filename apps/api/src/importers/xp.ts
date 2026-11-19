@@ -10,8 +10,9 @@ import { parseCsv, toCents, toNum } from './csv.ts';
  * - fato_provento.csv      proventos pagos, lançamento a lançamento do extrato
  *
  * Regras:
- * - Append-only: o mesmo arquivo (por hash) não é importado duas vezes, e um
- *   snapshot já existente (conta + data/hora) é mantido, nunca sobrescrito.
+ * - Append-only: o mesmo arquivo (por hash) não é importado duas vezes, um
+ *   snapshot já existente (conta + data/hora) é mantido, nunca sobrescrito, e um
+ *   provento já gravado (conta + ativo + data + tipo + valor) não é duplicado.
  * - Snapshot com linha inconsistente (qtd × preço ≠ valor) é recusado inteiro.
  */
 
@@ -256,27 +257,53 @@ export function importPositions(db: DB, file: ImportFile): ImportReport {
 
 const INCOME_TYPES = new Set(['dividendo', 'jcp', 'rendimento_fii', 'rendimento_fundo', 'reembolso_evento', 'juros', 'amortizacao']);
 
+/**
+ * Idempotente por lançamento: a chave é conta + ativo + data de pagamento + tipo + valor.
+ * O arquivo da coleta cresce a cada mês e é reimportado inteiro; só entram os lançamentos
+ * que ainda não estão no banco. Duas linhas iguais no mesmo arquivo são legítimas (lotes
+ * distintos com o mesmo valor), então a comparação é por contagem: entram só as ocorrências
+ * que excedem as já gravadas. Por isso não há índice único na tabela.
+ */
 export function importIncome(db: DB, file: ImportFile): ImportReport {
   const rows = parseCsv(file.text);
   return inTransaction(db, () => {
     const importId = registerImport(db, file, 'xp:proventos');
     if (importId === null) return { file: file.name, status: 'ja_importado', details: [] };
     const accountId = ensureXpAccount(db);
+    const countExisting = db.prepare(
+      `SELECT COUNT(*) AS n FROM asset_income
+       WHERE account_id = ? AND asset_id = ? AND date = ? AND type = ? AND amount_cents = ?`,
+    );
+    const insert = db.prepare(
+      `INSERT INTO asset_income (account_id, asset_id, date, ex_date, type, amount_cents, base_quantity,
+         value_per_unit, source, notes, import_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    // Quantas vezes cada chave já apareceu no arquivo até a linha atual.
+    const seen = new Map<string, number>();
+    let inserted = 0;
+    let skipped = 0;
     let total = 0;
     for (const r of rows) {
       const amount = toCents(r.valor_total);
       if (amount === null) throw new Error(`Provento sem valor: ${r.ticker} ${r.data_pagamento}`);
       const assetId = findOrCreateAsset(db, r.ticker, { asset_class: guessClassFromTicker(r.ticker) });
-      db.prepare(
-        `INSERT INTO asset_income (account_id, asset_id, date, ex_date, type, amount_cents, base_quantity,
-           value_per_unit, source, notes, import_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
+      const type = INCOME_TYPES.has(r.tipo) ? r.tipo : 'outro';
+      const key = `${assetId}|${r.data_pagamento}|${type}|${amount}`;
+      const occurrence = (seen.get(key) ?? 0) + 1;
+      seen.set(key, occurrence);
+      // As linhas gravadas nesta importação também contam, então `existing` cresce junto.
+      const existing = (countExisting.get(accountId, assetId, r.data_pagamento, type, amount) as { n: number }).n;
+      if (occurrence <= existing) {
+        skipped++;
+        continue;
+      }
+      insert.run(
         accountId,
         assetId,
         r.data_pagamento,
         r.data_com || null,
-        INCOME_TYPES.has(r.tipo) ? r.tipo : 'outro',
+        type,
         amount,
         toNum(r.qtd_base),
         toNum(r.valor_por_cota),
@@ -284,12 +311,16 @@ export function importIncome(db: DB, file: ImportFile): ImportReport {
         r.obs || null,
         importId,
       );
+      inserted++;
       total += amount;
     }
     return {
       file: file.name,
       status: 'importado',
-      details: [`${rows.length} lançamentos, total R$ ${(total / 100).toFixed(2)}`],
+      details: [
+        `${inserted} lançamento(s) novo(s), total R$ ${(total / 100).toFixed(2)}`,
+        `${skipped} já existente(s), ignorado(s)`,
+      ],
     };
   });
 }
