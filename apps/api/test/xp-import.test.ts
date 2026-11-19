@@ -94,6 +94,28 @@ describe('importação XP', () => {
     expect((db.prepare('SELECT COUNT(*) AS n FROM asset_income').get() as { n: number }).n).toBe(3);
   });
 
+  it('reimportar o arquivo de proventos com linhas novas só grava as novas', () => {
+    importXpFiles(db, files);
+    const grown = PROVENTOS + 'FFFF11,2026-11-14,,rendimento_fii,220.50,210,1.05,extrato,2026-11-19,\n';
+    const [report] = importXpFiles(db, [{ name: 'fato_provento.csv', text: grown }]);
+    expect(report.status).toBe('importado');
+    expect(report.details).toEqual(['1 lançamento(s) novo(s), total R$ 220.50', '3 já existente(s), ignorado(s)']);
+
+    const rows = db.prepare('SELECT date, amount_cents FROM asset_income ORDER BY date').all();
+    expect(rows).toHaveLength(4);
+    expect(rows.at(-1)).toEqual({ date: '2026-11-14', amount_cents: 22_050 });
+  });
+
+  it('lançamentos idênticos no mesmo arquivo entram todos, e só uma vez', () => {
+    const twin = 'AAAA3,2026-10-20,,dividendo,100.00,1000,0.1,extrato,2026-11-12,lote 2\n';
+    const count = () => (db.prepare('SELECT COUNT(*) AS n FROM asset_income').get() as { n: number }).n;
+    importXpFiles(db, [{ name: 'fato_provento.csv', text: PROVENTOS + twin }]);
+    expect(count()).toBe(4);
+    const [report] = importXpFiles(db, [{ name: 'fato_provento.csv', text: PROVENTOS + twin + '\n' }]);
+    expect(report.details[1]).toBe('4 já existente(s), ignorado(s)');
+    expect(count()).toBe(4);
+  });
+
   it('recusa snapshot com linha inconsistente', () => {
     const bad = H + '\n2026-12-01,10:00,Acoes,Renda Variavel Brasil,AAAA3,1000,19.11,20.00,25000.00,19110.00,,,,XP,';
     const [r] = importXpFiles(db, [{ name: 'carteira_ruim.csv', text: bad }]);
