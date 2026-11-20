@@ -37,7 +37,9 @@ export default function PositionsTab() {
           <Kpi
             label="Yield anualizado"
             value={pct(y.annualized_pct_cash_payers, 2, false)}
-            hint={`${pct(y.annualized_pct_total, 2, false)} incluindo títulos sem cupom · janela de ${y.window_days} dias`}
+            hint={`${pct(y.annualized_pct_total, 2, false)} incluindo títulos sem cupom · ${
+              y.window_days >= 365 ? 'últimos 12 meses' : `janela de ${y.window_days} dias`
+            }`}
           />
         )}
       </div>
@@ -90,7 +92,7 @@ export default function PositionsTab() {
         <p className="note" style={{ marginTop: 12 }}>
           Retornos recalculados a partir de valor e custo: a coluna de rentabilidade da corretora mede coisas diferentes por classe
           (preço em ações, com proventos em FIIs, líquida em fundos) e não é comparável. “Retorno total” soma os proventos registrados
-          no extrato, que começam em {y ? date(y.window_start) : '—'}, então o número fica abaixo do real para ativos mais antigos.
+          no extrato, que começam em {y ? date(y.income_history_start) : '—'}, então o número fica abaixo do real para ativos mais antigos.
         </p>
       </div>
     </div>
