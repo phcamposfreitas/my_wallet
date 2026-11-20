@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { api, type Portfolio, type Position } from '../../lib/api';
 import { ASSET_CLASS_LABEL, date, money, pct, qty, signClass } from '../../lib/format';
 import { Kpi, Loading } from '../../components/ui';
+import ContributionsByYear from './ContributionsByYear';
 
 export default function PositionsTab() {
   const { data, error } = useQuery({ queryKey: ['portfolio'], queryFn: () => api.get<Portfolio>('/portfolio') });
@@ -62,41 +63,7 @@ export default function PositionsTab() {
         )}
       </div>
 
-      {c && c.by_year.length > 0 && (
-        <div className="card">
-          <h2>Aportes por ano</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Ano</th>
-                  <th className="num">Entrou</th>
-                  <th className="num">Saiu</th>
-                  <th className="num">Aportado no ano</th>
-                  <th className="num">Acumulado</th>
-                  <th className="num">Enviado ao exterior</th>
-                </tr>
-              </thead>
-              <tbody>
-                {c.by_year.map((y) => (
-                  <tr key={y.year}>
-                    <td>{y.year}</td>
-                    <td className="num">{money(y.in_cents)}</td>
-                    <td className="num">{y.out_cents ? money(-y.out_cents) : '—'}</td>
-                    <td className={`num ${signClass(y.net_cents)}`}>{money(y.net_cents)}</td>
-                    <td className="num">{money(y.cumulative_net_cents)}</td>
-                    <td className="num">{y.abroad_cents ? money(y.abroad_cents) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="note" style={{ marginTop: 12 }}>
-            Entrou: TEDs e transferências recebidas mais cashback. Saiu: saques, transferências enviadas e faturas pagas com o saldo.
-            Aplicações em fundos, compras, vendas e proventos não contam, porque não tiram nem põem dinheiro na conta.
-          </p>
-        </div>
-      )}
+      {c && c.by_year.length > 0 && <ContributionsByYear byYear={c.by_year} />}
 
       <div className="card">
         <h2>Por classe</h2>
