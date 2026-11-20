@@ -96,6 +96,26 @@ export interface Position {
   total_return_pct: number | null;
 }
 
+export interface ContributionYear {
+  year: string;
+  in_cents: number;
+  out_cents: number;
+  abroad_cents: number;
+  net_cents: number;
+  cumulative_net_cents: number;
+  /** Notas de negociação + subscrições e exercícios de opção. */
+  bought_cents: number;
+  /** Notas de negociação + frações e resgates de renda variável. */
+  sold_cents: number;
+  /** Tesouro, fundos e CDB. */
+  applied_cents: number;
+  redeemed_cents: number;
+  /** IR, IOF, taxas e derivativos (negativo = custo). */
+  costs_cents: number;
+  income_cents: number;
+  movements: { kind: string; product: string; ticker: string | null; description: string; amount_cents: number; count: number }[];
+}
+
 export interface Portfolio {
   /** Entradas e saídas de dinheiro da corretora até a última coleta; null sem fluxos importados. */
   contributions: null | {
@@ -111,8 +131,8 @@ export interface Portfolio {
     gain_cents: number;
     first_date: string;
     last_date: string;
-    /** Entrou = aportes + cashback; saiu = retiradas; exterior à parte; líquido = entrou − saiu. */
-    by_year: { year: string; in_cents: number; out_cents: number; abroad_cents: number; net_cents: number; cumulative_net_cents: number }[];
+    /** Por ano: dinheiro que entrou e saiu, compras e vendas, aplicações e resgates sem nota, custos e proventos. */
+    by_year: ContributionYear[];
   };
   snapshots: { id: number; account_name: string; taken_at: string }[];
   positions: Position[];

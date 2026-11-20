@@ -1,7 +1,7 @@
 /**
  * Uso: npm run import:xp -- <pasta-ou-arquivos...>
  * Ex.: npm run import:xp -- ~/Downloads
- * Lê dim_ativo.csv, dim_indicador.csv, carteira_*.csv, fato_provento.csv, fato_fluxo.csv e fato_operacao.csv
+ * Lê dim_ativo.csv, dim_indicador.csv, carteira_*.csv, fato_provento.csv, fato_fluxo.csv, fato_operacao.csv e fato_movimento.csv
  * e grava no banco local. Os arquivos não são copiados para o repositório.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { openDb } from '../db.ts';
 import { dbPathOrExit } from '../db-path.ts';
 import { importXpFiles } from '../importers/xp.ts';
 
-const WANTED = /^(dim_ativo|dim_indicador|carteira.*|fato_provento|fato_fluxo|fato_operacao)\.csv$/i;
+const WANTED = /^(dim_ativo|dim_indicador|carteira.*|fato_provento|fato_fluxo|fato_operacao|fato_movimento)\.csv$/i;
 
 const args = process.argv.slice(2);
 if (!args.length) {

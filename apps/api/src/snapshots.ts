@@ -169,21 +169,7 @@ export function buildPortfolio(db: DB) {
       .all(...accountIds, lastSnapshot) as { kind: string; total: number; first: string; last: string }[];
     if (flows.length) {
       const sum = (k: string) => flows.find((f) => f.kind === k)?.total ?? 0;
-      const yearly = db
-        .prepare(
-          `SELECT substr(date,1,4) AS year,
-             COALESCE(SUM(CASE WHEN kind IN ('aporte','cashback') THEN amount_cents END),0) AS in_cents,
-             COALESCE(-SUM(CASE WHEN kind = 'retirada' THEN amount_cents END),0) AS out_cents,
-             COALESCE(-SUM(CASE WHEN kind = 'exterior' THEN amount_cents END),0) AS abroad_cents
-           FROM account_flows WHERE account_id IN (${marks}) AND date <= ? GROUP BY year ORDER BY year`,
-        )
-        .all(...accountIds, lastSnapshot) as { year: string; in_cents: number; out_cents: number; abroad_cents: number }[];
-      let running = 0;
-      const byYear = yearly.map((y) => {
-        const net = y.in_cents - y.out_cents;
-        running += net;
-        return { ...y, net_cents: net, cumulative_net_cents: running };
-      });
+      const byYear = yearlySummary(db, accountIds, lastSnapshot);
       const net = sum('aporte') + sum('cashback') + sum('retirada');
       const abroad = -sum('exterior');
       const total = positionsValue + cash + receivable;
@@ -198,7 +184,6 @@ export function buildPortfolio(db: DB) {
         gain_cents: total - (net - abroad),
         first_date: flows.reduce((m, f) => (f.first < m ? f.first : m), flows[0].first),
         last_date: flows.reduce((m, f) => (f.last > m ? f.last : m), flows[0].last),
-        // Por ano: entrou (aportes + cashback), saiu (retiradas), exterior à parte; líquido = entrou − saiu.
         by_year: byYear,
       };
     }
@@ -223,6 +208,98 @@ export function buildPortfolio(db: DB) {
     },
     yield: yieldInfo,
   };
+}
+
+export interface YearSummary {
+  year: string;
+  /** Entrou na conta: aportes + cashback. */
+  in_cents: number;
+  /** Saiu da conta: retiradas. */
+  out_cents: number;
+  /** Enviado ao exterior (continua investido, fora desta conta). */
+  abroad_cents: number;
+  /** Aportado no ano = entrou − saiu. */
+  net_cents: number;
+  cumulative_net_cents: number;
+  /** Compras de ativos: notas de negociação + subscrições e exercícios de opção. */
+  bought_cents: number;
+  /** Vendas de ativos: notas de negociação + frações e resgates de renda variável. */
+  sold_cents: number;
+  /** Aplicado em Tesouro, fundos e CDB. */
+  applied_cents: number;
+  /** Resgatado de Tesouro, fundos e CDB (vencimentos incluídos). */
+  redeemed_cents: number;
+  /** IR, IOF, taxas e resultado de derivativos (negativo = custo). */
+  costs_cents: number;
+  /** Proventos pagos no ano. */
+  income_cents: number;
+  /** Movimentos sem nota, agrupados por produto e descrição, para o detalhe do ano. */
+  movements: { kind: string; product: string; ticker: string | null; description: string; amount_cents: number; count: number }[];
+}
+
+/**
+ * Resumo por ano até `until`: entradas e saídas de dinheiro, compras e vendas de ativos, aplicações e
+ * resgates sem nota (Tesouro, fundos, CDB), custos e proventos. Anos com qualquer movimento aparecem.
+ */
+export function yearlySummary(db: DB, accountIds: number[], until: string): YearSummary[] {
+  const marks = accountIds.map(() => '?').join(',');
+  const args = [...accountIds, until];
+  const years = new Map<string, YearSummary>();
+  const get = (year: string) => {
+    if (!years.has(year))
+      years.set(year, {
+        year, in_cents: 0, out_cents: 0, abroad_cents: 0, net_cents: 0, cumulative_net_cents: 0, bought_cents: 0,
+        sold_cents: 0, applied_cents: 0, redeemed_cents: 0, costs_cents: 0, income_cents: 0, movements: [],
+      });
+    return years.get(year)!;
+  };
+  const rows = <T,>(sql: string) => db.prepare(sql).all(...args) as T[];
+
+  for (const r of rows<{ year: string; kind: string; total: number }>(
+    `SELECT substr(date,1,4) AS year, kind, SUM(amount_cents) AS total FROM account_flows
+     WHERE account_id IN (${marks}) AND date <= ? GROUP BY year, kind`,
+  )) {
+    const y = get(r.year);
+    if (r.kind === 'aporte' || r.kind === 'cashback') y.in_cents += r.total;
+    else if (r.kind === 'retirada') y.out_cents -= r.total;
+    else if (r.kind === 'exterior') y.abroad_cents -= r.total;
+  }
+  for (const r of rows<{ year: string; side: string; total: number }>(
+    `SELECT substr(date,1,4) AS year, side, SUM(ROUND(quantity * price_cents)) AS total FROM trades
+     WHERE account_id IN (${marks}) AND date <= ? GROUP BY year, side`,
+  )) {
+    if (r.side === 'buy') get(r.year).bought_cents += r.total;
+    else get(r.year).sold_cents += r.total;
+  }
+  for (const r of rows<{ year: string; kind: string; product: string; ticker: string | null; description: string; total: number; n: number }>(
+    `SELECT substr(date,1,4) AS year, kind, product, ticker, COALESCE(description,'') AS description,
+       SUM(amount_cents) AS total, COUNT(*) AS n
+     FROM account_movements WHERE account_id IN (${marks}) AND date <= ?
+     GROUP BY year, kind, product, ticker, description ORDER BY year, ABS(SUM(amount_cents)) DESC`,
+  )) {
+    const y = get(r.year);
+    if (r.kind === 'compra') y.bought_cents -= r.total;
+    else if (r.kind === 'venda') y.sold_cents += r.total;
+    else if (r.kind === 'aplicacao') y.applied_cents -= r.total;
+    else if (r.kind === 'resgate') y.redeemed_cents += r.total;
+    else y.costs_cents += r.total;
+    y.movements.push({ kind: r.kind, product: r.product, ticker: r.ticker, description: r.description, amount_cents: r.total, count: r.n });
+  }
+  for (const r of rows<{ year: string; total: number }>(
+    `SELECT substr(date,1,4) AS year, SUM(amount_cents) AS total FROM asset_income
+     WHERE account_id IN (${marks}) AND date <= ? GROUP BY year`,
+  ))
+    get(r.year).income_cents += r.total;
+
+  let running = 0;
+  return [...years.values()]
+    .sort((a, b) => a.year.localeCompare(b.year))
+    .map((y) => {
+      y.net_cents = y.in_cents - y.out_cents;
+      running += y.net_cents;
+      y.cumulative_net_cents = running;
+      return y;
+    });
 }
 
 export type ChangeKind = 'mercado' | 'compra' | 'venda' | 'evento_corporativo' | 'nova' | 'encerrada' | 'indefinido';
