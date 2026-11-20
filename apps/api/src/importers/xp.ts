@@ -8,6 +8,7 @@ import { parseCsv, toCents, toNum } from './csv.ts';
  * - dim_indicador.csv      vocabulário de indicadores
  * - carteira_xp_historico.csv  snapshots de posição (formato longo)
  * - fato_provento.csv      proventos pagos, lançamento a lançamento do extrato
+ * - fato_fluxo.csv         entradas e saídas de dinheiro da conta (aportes, retiradas, câmbio, cashback)
  *
  * Regras:
  * - Append-only: o mesmo arquivo (por hash) não é importado duas vezes, um
@@ -325,7 +326,56 @@ export function importIncome(db: DB, file: ImportFile): ImportReport {
   });
 }
 
-/** Importa na ordem certa: cadastro → vocabulário → posições → proventos. */
+const FLOW_KINDS = new Set(['aporte', 'retirada', 'exterior', 'cashback']);
+
+/**
+ * Entradas e saídas de dinheiro da conta (`data,tipo,valor,descricao,fonte`), com o valor com sinal
+ * (+ entrou, − saiu). Idempotente por lançamento como os proventos: a chave é conta + data + tipo +
+ * valor + descrição, contada por ocorrência para aceitar lançamentos iguais no mesmo dia.
+ */
+export function importFlows(db: DB, file: ImportFile): ImportReport {
+  const rows = parseCsv(file.text);
+  return inTransaction(db, () => {
+    const importId = registerImport(db, file, 'xp:fluxo');
+    if (importId === null) return { file: file.name, status: 'ja_importado', details: [] };
+    const accountId = ensureXpAccount(db);
+    const countExisting = db.prepare(
+      `SELECT COUNT(*) AS n FROM account_flows
+       WHERE account_id = ? AND date = ? AND kind = ? AND amount_cents = ? AND COALESCE(description, '') = ?`,
+    );
+    const insert = db.prepare(
+      'INSERT INTO account_flows (account_id, date, kind, amount_cents, description, source, import_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    const seen = new Map<string, number>();
+    let inserted = 0;
+    let skipped = 0;
+    let net = 0;
+    for (const r of rows) {
+      const amount = toCents(r.valor);
+      if (amount === null) throw new Error(`Fluxo sem valor: ${r.data} ${r.descricao}`);
+      if (!FLOW_KINDS.has(r.tipo)) throw new Error(`Tipo de fluxo desconhecido: ${r.tipo} (${r.data} ${r.descricao})`);
+      const desc = r.descricao || '';
+      const key = `${r.data}|${r.tipo}|${amount}|${desc}`;
+      const occurrence = (seen.get(key) ?? 0) + 1;
+      seen.set(key, occurrence);
+      const existing = (countExisting.get(accountId, r.data, r.tipo, amount, desc) as { n: number }).n;
+      if (occurrence <= existing) {
+        skipped++;
+        continue;
+      }
+      insert.run(accountId, r.data, r.tipo, amount, desc || null, r.fonte || null, importId);
+      inserted++;
+      net += amount;
+    }
+    return {
+      file: file.name,
+      status: 'importado',
+      details: [`${inserted} movimento(s) novo(s), saldo R$ ${(net / 100).toFixed(2)}`, `${skipped} já existente(s), ignorado(s)`],
+    };
+  });
+}
+
+/** Importa na ordem certa: cadastro → vocabulário → posições → proventos → fluxos. */
 export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
   const byName = (re: RegExp) => files.find((f) => re.test(f.name));
   const plan: Array<[RegExp, (db: DB, f: ImportFile) => ImportReport]> = [
@@ -333,6 +383,7 @@ export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
     [/dim_indicador/i, importIndicators],
     [/carteira/i, importPositions],
     [/provento/i, importIncome],
+    [/fluxo/i, importFlows],
   ];
   const reports: ImportReport[] = [];
   for (const [re, fn] of plan) {

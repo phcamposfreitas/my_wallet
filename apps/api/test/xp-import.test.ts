@@ -135,6 +135,42 @@ describe('importação XP', () => {
     expect(y.income_history_start).toBe('2025-11-12');
   });
 
+  it('importa entradas e saídas e calcula o total aportado', () => {
+    importXpFiles(db, files);
+    expect(buildPortfolio(db).contributions).toBeNull();
+
+    const FLUXO = `data,tipo,valor,descricao,fonte
+2026-01-10,aporte,50000.00,TED - RECEBIMENTO DE TED - SPB,extrato
+2026-02-10,retirada,-5000.00,TED BCO 1 - RETIRADA EM C/C,extrato
+2026-03-10,exterior,-2000.00,Cambio VD Intern,extrato
+2026-03-11,cashback,30.00,Investback,extrato
+2026-03-11,cashback,30.00,Investback,extrato
+2026-12-01,aporte,999.00,depois da última coleta,extrato
+`;
+    const [r] = importXpFiles(db, [{ name: 'fato_fluxo.csv', text: FLUXO }]);
+    expect(r.details[0]).toBe('6 movimento(s) novo(s), saldo R$ 44059.00');
+    // Reimportar com uma linha a mais só grava a nova.
+    const [again] = importXpFiles(db, [{ name: 'fato_fluxo.csv', text: FLUXO + '2026-03-12,aporte,100.00,TED,extrato\n' }]);
+    expect(again.details).toEqual(['1 movimento(s) novo(s), saldo R$ 100.00', '6 já existente(s), ignorado(s)']);
+
+    const pf = buildPortfolio(db);
+    const c = pf.contributions!;
+    expect(c.deposits_cents).toBe(5_010_000);
+    expect(c.withdrawals_cents).toBe(500_000);
+    expect(c.cashback_cents).toBe(6_000);
+    expect(c.abroad_cents).toBe(200_000);
+    expect(c.net_cents).toBe(4_516_000); // 50.100 + 60 − 5.000; o aporte de dezembro fica fora
+    expect(c.net_in_account_cents).toBe(4_316_000);
+    expect(c.gain_cents).toBe(pf.totals.total_cents - 4_316_000);
+    expect(c.last_date).toBe('2026-03-12');
+  });
+
+  it('recusa fluxo de tipo desconhecido', () => {
+    const [r] = importXpFiles(db, [{ name: 'fato_fluxo.csv', text: 'data,tipo,valor,descricao,fonte\n2026-01-01,compra,-10.00,x,extrato\n' }]);
+    expect(r.status).toBe('erro');
+    expect((db.prepare('SELECT COUNT(*) AS n FROM account_flows').get() as { n: number }).n).toBe(0);
+  });
+
   it('recusa snapshot com linha inconsistente', () => {
     const bad = H + '\n2026-12-01,10:00,Acoes,Renda Variavel Brasil,AAAA3,1000,19.11,20.00,25000.00,19110.00,,,,XP,';
     const [r] = importXpFiles(db, [{ name: 'carteira_ruim.csv', text: bad }]);

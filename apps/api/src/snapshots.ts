@@ -154,7 +154,41 @@ export function buildPortfolio(db: DB) {
     };
   }
 
+  // Total aportado: entradas e saídas de dinheiro das contas dos snapshots, até a última coleta.
+  // O câmbio para o exterior não é saque (continua investido), mas saiu desta conta: entra na
+  // base do ganho da conta e é mostrado à parte.
+  let contributions = null;
+  if (lastSnapshot) {
+    const accountIds = [...new Set(snapshots.map((s) => s.account_id))];
+    const marks = accountIds.map(() => '?').join(',');
+    const flows = db
+      .prepare(
+        `SELECT kind, COALESCE(SUM(amount_cents),0) AS total, MIN(date) AS first, MAX(date) AS last
+         FROM account_flows WHERE account_id IN (${marks}) AND date <= ? GROUP BY kind`,
+      )
+      .all(...accountIds, lastSnapshot) as { kind: string; total: number; first: string; last: string }[];
+    if (flows.length) {
+      const sum = (k: string) => flows.find((f) => f.kind === k)?.total ?? 0;
+      const net = sum('aporte') + sum('cashback') + sum('retirada');
+      const abroad = -sum('exterior');
+      const total = positionsValue + cash + receivable;
+      contributions = {
+        deposits_cents: sum('aporte'),
+        withdrawals_cents: -sum('retirada'),
+        cashback_cents: sum('cashback'),
+        abroad_cents: abroad,
+        net_cents: net,
+        // O que ficou nesta conta: aportado menos o que foi para o exterior.
+        net_in_account_cents: net - abroad,
+        gain_cents: total - (net - abroad),
+        first_date: flows.reduce((m, f) => (f.first < m ? f.first : m), flows[0].first),
+        last_date: flows.reduce((m, f) => (f.last > m ? f.last : m), flows[0].last),
+      };
+    }
+  }
+
   return {
+    contributions,
     snapshots,
     positions,
     by_class: [...byClass.values()]

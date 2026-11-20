@@ -239,6 +239,27 @@ const MIGRATIONS: string[] = [
   -- De onde vem o realizado: NULL = lançamentos (pelo padrão); 'proventos' = proventos da carteira (asset_income).
   ALTER TABLE plan_items ADD COLUMN source TEXT CHECK (source IN ('proventos'));
   `,
+  // v8: entradas e saídas de dinheiro da corretora (base do "total aportado")
+  `
+  -- Só movimentos que cruzam a fronteira da conta; compras, vendas, proventos e aplicações em
+  -- fundos ficam de fora. amount_cents com sinal: + entrou, − saiu.
+  -- aporte    TED ou transferência recebida
+  -- retirada  TED para conta corrente, transferência enviada, pagamento de fatura com o saldo
+  -- exterior  remessa de câmbio (com IOF): continua investida, mas fora da conta
+  -- cashback  crédito de cashback (ex.: Investback)
+  CREATE TABLE account_flows (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('aporte','retirada','exterior','cashback')),
+    amount_cents INTEGER NOT NULL,
+    description TEXT,
+    source TEXT,
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_account_flows_date ON account_flows(account_id, date);
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [

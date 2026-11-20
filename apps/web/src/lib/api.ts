@@ -97,6 +97,21 @@ export interface Position {
 }
 
 export interface Portfolio {
+  /** Entradas e saídas de dinheiro da corretora até a última coleta; null sem fluxos importados. */
+  contributions: null | {
+    deposits_cents: number;
+    withdrawals_cents: number;
+    cashback_cents: number;
+    /** Enviado ao exterior: continua investido, fora desta conta. */
+    abroad_cents: number;
+    /** Aportes + cashback − retiradas. */
+    net_cents: number;
+    net_in_account_cents: number;
+    /** Patrimônio da corretora − o que ficou nela (net − exterior). */
+    gain_cents: number;
+    first_date: string;
+    last_date: string;
+  };
   snapshots: { id: number; account_name: string; taken_at: string }[];
   positions: Position[];
   by_class: { asset_class: string; value_cents: number; cost_cents: number; income_cents: number; count: number; price_return_pct: number | null }[];

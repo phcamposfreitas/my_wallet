@@ -25,11 +25,29 @@ export default function PositionsTab() {
 
   const t = data.totals;
   const y = data.yield;
+  const c = data.contributions;
 
   return (
     <div className="stack">
       <div className="grid kpis" style={{ marginBottom: 0 }}>
         <Kpi label="Patrimônio na corretora" value={money(t.total_cents)} hint={`Snapshot de ${date(data.snapshots[0].taken_at)} ${data.snapshots[0].taken_at.slice(11)}`} />
+        {c && (
+          <Kpi
+            label="Total aportado"
+            value={money(c.net_cents)}
+            hint={`${money(c.deposits_cents + c.cashback_cents)} entraram · ${money(c.withdrawals_cents)} saíram · ${date(c.first_date)} a ${date(c.last_date)}${
+              c.abroad_cents ? ` · ${money(c.abroad_cents)} no exterior` : ''
+            }`}
+          />
+        )}
+        {c && (
+          <Kpi
+            label="Ganho sobre o aportado"
+            value={money(c.gain_cents)}
+            tone={c.gain_cents}
+            hint={`${pct((c.gain_cents / c.net_in_account_cents) * 100)} · patrimônio − ${money(c.net_in_account_cents)} que ficaram na corretora`}
+          />
+        )}
         <Kpi label="Posições" value={money(t.positions_value_cents)} hint={`Custo ${money(t.positions_cost_cents)}`} />
         <Kpi label="Retorno de preço" value={pct(t.price_return_pct)} tone={t.price_return_pct ?? 0} hint="Valor ÷ custo, sem proventos" />
         <Kpi label="Saldo + proventos a receber" value={money(t.cash_cents + t.receivable_income_cents)} hint={`${money(t.cash_cents)} em conta · ${money(t.receivable_income_cents)} a receber`} />
