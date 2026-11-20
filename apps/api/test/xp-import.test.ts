@@ -163,6 +163,9 @@ describe('importação XP', () => {
     expect(c.net_in_account_cents).toBe(4_316_000);
     expect(c.gain_cents).toBe(pf.totals.total_cents - 4_316_000);
     expect(c.last_date).toBe('2026-03-12');
+    expect(c.by_year).toEqual([
+      { year: '2026', in_cents: 5_016_000, out_cents: 500_000, abroad_cents: 200_000, net_cents: 4_516_000, cumulative_net_cents: 4_516_000 },
+    ]);
   });
 
   it('recusa fluxo de tipo desconhecido', () => {

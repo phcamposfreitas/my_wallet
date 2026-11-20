@@ -169,6 +169,21 @@ export function buildPortfolio(db: DB) {
       .all(...accountIds, lastSnapshot) as { kind: string; total: number; first: string; last: string }[];
     if (flows.length) {
       const sum = (k: string) => flows.find((f) => f.kind === k)?.total ?? 0;
+      const yearly = db
+        .prepare(
+          `SELECT substr(date,1,4) AS year,
+             COALESCE(SUM(CASE WHEN kind IN ('aporte','cashback') THEN amount_cents END),0) AS in_cents,
+             COALESCE(-SUM(CASE WHEN kind = 'retirada' THEN amount_cents END),0) AS out_cents,
+             COALESCE(-SUM(CASE WHEN kind = 'exterior' THEN amount_cents END),0) AS abroad_cents
+           FROM account_flows WHERE account_id IN (${marks}) AND date <= ? GROUP BY year ORDER BY year`,
+        )
+        .all(...accountIds, lastSnapshot) as { year: string; in_cents: number; out_cents: number; abroad_cents: number }[];
+      let running = 0;
+      const byYear = yearly.map((y) => {
+        const net = y.in_cents - y.out_cents;
+        running += net;
+        return { ...y, net_cents: net, cumulative_net_cents: running };
+      });
       const net = sum('aporte') + sum('cashback') + sum('retirada');
       const abroad = -sum('exterior');
       const total = positionsValue + cash + receivable;
@@ -183,6 +198,8 @@ export function buildPortfolio(db: DB) {
         gain_cents: total - (net - abroad),
         first_date: flows.reduce((m, f) => (f.first < m ? f.first : m), flows[0].first),
         last_date: flows.reduce((m, f) => (f.last > m ? f.last : m), flows[0].last),
+        // Por ano: entrou (aportes + cashback), saiu (retiradas), exterior à parte; líquido = entrou − saiu.
+        by_year: byYear,
       };
     }
   }
