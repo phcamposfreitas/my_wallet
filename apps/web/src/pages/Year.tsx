@@ -39,7 +39,7 @@ export default function Year() {
 
   if (!data) return <Loading error={error} />;
   const t = data.totals;
-  const net = data.months.map((m) => m.expense_cents - m.income_cents);
+  const net = data.months.map((m) => m.expense_cents - m.income_cents - m.reimbursement_cents);
   const max = Math.max(1, ...data.months.map((_, i) => series.reduce((s, c) => s + Math.max(0, c.monthly[i]), 0)));
   const heatMax = Math.max(1, ...data.by_category.flatMap((c) => c.monthly));
   const totalCats = data.by_category.reduce((s, c) => s + Math.max(0, c.total_cents), 0);
@@ -63,7 +63,7 @@ export default function Year() {
       ) : (
         <div className="stack">
           <div className="grid kpis" style={{ marginBottom: 0 }}>
-            <Kpi label="Gasto no ano" value={money(t.net_expense_cents)} hint={`${money(t.expense_cents)} em gastos − ${money(t.income_cents)} em estornos`} />
+            <Kpi label="Gasto no ano" value={money(t.net_expense_cents)} hint={`${money(t.expense_cents)} em gastos − ${money(t.income_cents)} em estornos${t.reimbursement_cents ? ` − ${money(t.reimbursement_cents)} de reembolso da casa` : ''}`} />
             <Kpi label="Média mensal" value={money(t.monthly_avg_net_expense_cents)} hint={`Sobre ${t.months_with_data} meses com lançamentos`} />
             <Kpi label="Proventos recebidos" value={money(t.investment_income_cents)} hint="Dividendos, JCP e rendimentos" />
             <Kpi label="Sem categoria" value={money(t.uncategorized_cents)} hint={`${((t.uncategorized_cents / Math.max(1, totalCats)) * 100).toFixed(0)}% do gasto — dá para classificar em Gastos`} />

@@ -41,6 +41,13 @@ export interface Account {
   balance_cents: number;
 }
 
+export interface SharedCost {
+  id: number;
+  name: string;
+  match_pattern: string;
+  people: number;
+}
+
 export interface Category {
   id: number;
   name: string;
@@ -66,6 +73,9 @@ export interface MonthSummary {
   income_cents: number;
   expense_cents: number;
   balance_cents: number;
+  /** Despesas da casa rateadas no mês e o reembolso dos outros moradores (já somado em income_cents). */
+  shared_expense_cents: number;
+  reimbursement_cents: number;
   by_category: { category_id: number | null; name: string; color: string | null; total_cents: number }[];
 }
 
@@ -226,13 +236,14 @@ export interface YearSummary {
   totals: {
     expense_cents: number;
     income_cents: number;
+    reimbursement_cents: number;
     net_expense_cents: number;
     months_with_data: number;
     monthly_avg_net_expense_cents: number;
     investment_income_cents: number;
     uncategorized_cents: number;
   };
-  months: { month: string; expense_cents: number; income_cents: number; investment_income_cents: number }[];
+  months: { month: string; expense_cents: number; income_cents: number; reimbursement_cents: number; investment_income_cents: number }[];
   by_category: { category_id: number | null; name: string; color: string | null; total_cents: number; monthly: number[] }[];
   by_account: { account_id: number; name: string; type: string; expense_cents: number; income_cents: number; count: number }[];
   top_merchants: { name: string; total_cents: number; count: number }[];
@@ -258,12 +269,25 @@ export interface PlanItem {
   realized: number[];
   annual_cents: number;
   realized_cents: number;
+  /** Moradores que dividem o gasto (null = só do titular). */
+  shared_people: number | null;
+}
+
+export interface PlanReimbursement {
+  name: string;
+  items: { name: string; people: number; annual_cents: number }[];
+  shared_expense_annual_cents: number;
+  planned: number[];
+  realized: number[];
+  annual_cents: number;
+  realized_cents: number;
 }
 
 export interface Plan {
   year: number;
   items: PlanItem[];
   income_items: PlanItem[];
+  reimbursement: PlanReimbursement | null;
   totals: {
     income_annual_cents: number;
     income_monthly: number[];
