@@ -111,6 +111,8 @@ export interface Portfolio {
     gain_cents: number;
     first_date: string;
     last_date: string;
+    /** Entrou = aportes + cashback; saiu = retiradas; exterior à parte; líquido = entrou − saiu. */
+    by_year: { year: string; in_cents: number; out_cents: number; abroad_cents: number; net_cents: number; cumulative_net_cents: number }[];
   };
   snapshots: { id: number; account_name: string; taken_at: string }[];
   positions: Position[];
