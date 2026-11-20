@@ -163,9 +163,11 @@ describe('importação XP', () => {
     expect(c.net_in_account_cents).toBe(4_316_000);
     expect(c.gain_cents).toBe(pf.totals.total_cents - 4_316_000);
     expect(c.last_date).toBe('2026-03-12');
-    expect(c.by_year).toEqual([
-      { year: '2026', in_cents: 5_016_000, out_cents: 500_000, abroad_cents: 200_000, net_cents: 4_516_000, cumulative_net_cents: 4_516_000 },
-    ]);
+    expect(c.by_year).toHaveLength(1);
+    expect(c.by_year[0]).toMatchObject({
+      year: '2026', in_cents: 5_016_000, out_cents: 500_000, abroad_cents: 200_000, net_cents: 4_516_000, cumulative_net_cents: 4_516_000,
+      income_cents: 36_000, // proventos de out/2026 dos dados de exemplo
+    });
   });
 
   it('importa operações das notas sem duplicar e sem exigir posição prévia', () => {
@@ -185,6 +187,25 @@ describe('importação XP', () => {
     const [again] = importXpFiles(db, [{ name: 'fato_operacao.csv', text: OPS + '103,2026-04-10,2026-04-12,AAAA3,,sell,VISTA,50,20.00,1000.00,0.20,BRASIL ON NM\n' }]);
     expect(again.details).toEqual(['1 operação(ões) nova(s)', '4 já existente(s), ignorada(s)']);
     expect((db.prepare('SELECT COUNT(*) AS n, SUM(fees_cents) AS f FROM trades').get() as { n: number; f: number })).toEqual({ n: 5, f: 190 });
+  });
+
+  it('importa movimentos sem nota e soma no resumo anual', () => {
+    importXpFiles(db, files);
+    importXpFiles(db, [{ name: 'fato_fluxo.csv', text: 'data,tipo,valor,descricao,fonte\n2026-01-05,aporte,30000.00,TED,extrato\n' }]);
+    const MOV = `data,tipo,produto,ticker,valor,descricao,fonte
+2026-01-10,aplicacao,tesouro,,-10000.00,COMPRA TESOURO DIRETO CLIENTES,extrato
+2026-02-10,resgate,fundo,,4000.00,RESGATE Fundo X,extrato
+2026-03-10,compra,subscricao,FFFF11,-970.00,SUBSCRIÇÃO S/ 10,extrato
+2026-03-11,custo,tesouro,,-12.50,TAXA SEMESTRAL TESOURO DIRETO - CBLC,extrato
+`;
+    const [r] = importXpFiles(db, [{ name: 'fato_movimento.csv', text: MOV }]);
+    expect(r.details).toEqual(['4 movimento(s) novo(s)', '0 já existente(s), ignorado(s)']);
+    const [again] = importXpFiles(db, [{ name: 'fato_movimento.csv', text: MOV + '\n' }]);
+    expect(again.details[1]).toBe('4 já existente(s), ignorado(s)');
+
+    const y = buildPortfolio(db).contributions!.by_year.find((x) => x.year === '2026')!;
+    expect(y).toMatchObject({ applied_cents: 1_000_000, redeemed_cents: 400_000, bought_cents: 97_000, costs_cents: -1_250 });
+    expect(y.movements).toHaveLength(4);
   });
 
   it('recusa fluxo de tipo desconhecido', () => {

@@ -10,6 +10,7 @@ import { parseCsv, toCents, toNum } from './csv.ts';
  * - fato_provento.csv      proventos pagos, lançamento a lançamento do extrato
  * - fato_fluxo.csv         entradas e saídas de dinheiro da conta (aportes, retiradas, câmbio, cashback)
  * - fato_operacao.csv      compras e vendas à vista das notas de negociação
+ * - fato_movimento.csv     movimentos sem nota: Tesouro, fundos, CDB, subscrições, opções, custos
  *
  * Regras:
  * - Append-only: o mesmo arquivo (por hash) não é importado duas vezes, um
@@ -427,7 +428,57 @@ export function importTrades(db: DB, file: ImportFile): ImportReport {
   });
 }
 
-/** Importa na ordem certa: cadastro → vocabulário → posições → proventos → fluxos → operações. */
+const MOVEMENT_KINDS = new Set(['compra', 'venda', 'aplicacao', 'resgate', 'custo']);
+const MOVEMENT_PRODUCTS = new Set(['tesouro', 'fundo', 'cdb', 'subscricao', 'opcao', 'derivativo', 'outro']);
+
+/**
+ * Movimentos internos sem nota de negociação (`data,tipo,produto,ticker,valor,descricao,fonte`), com o valor
+ * com sinal como no extrato. Idempotente por lançamento: conta + data + tipo + produto + valor + descrição,
+ * contada por ocorrência.
+ */
+export function importMovements(db: DB, file: ImportFile): ImportReport {
+  const rows = parseCsv(file.text);
+  return inTransaction(db, () => {
+    const importId = registerImport(db, file, 'xp:movimentos');
+    if (importId === null) return { file: file.name, status: 'ja_importado', details: [] };
+    const accountId = ensureXpAccount(db);
+    const countExisting = db.prepare(
+      `SELECT COUNT(*) AS n FROM account_movements
+       WHERE account_id = ? AND date = ? AND kind = ? AND product = ? AND amount_cents = ? AND COALESCE(description, '') = ?`,
+    );
+    const insert = db.prepare(
+      `INSERT INTO account_movements (account_id, date, kind, product, ticker, amount_cents, description, source, import_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const seen = new Map<string, number>();
+    let inserted = 0;
+    let skipped = 0;
+    for (const r of rows) {
+      const amount = toCents(r.valor);
+      if (amount === null) throw new Error(`Movimento sem valor: ${r.data} ${r.descricao}`);
+      if (!MOVEMENT_KINDS.has(r.tipo)) throw new Error(`Tipo de movimento desconhecido: ${r.tipo} (${r.data})`);
+      if (!MOVEMENT_PRODUCTS.has(r.produto)) throw new Error(`Produto desconhecido: ${r.produto} (${r.data})`);
+      const desc = r.descricao || '';
+      const key = `${r.data}|${r.tipo}|${r.produto}|${amount}|${desc}`;
+      const occurrence = (seen.get(key) ?? 0) + 1;
+      seen.set(key, occurrence);
+      const existing = (countExisting.get(accountId, r.data, r.tipo, r.produto, amount, desc) as { n: number }).n;
+      if (occurrence <= existing) {
+        skipped++;
+        continue;
+      }
+      insert.run(accountId, r.data, r.tipo, r.produto, r.ticker || null, amount, desc || null, r.fonte || null, importId);
+      inserted++;
+    }
+    return {
+      file: file.name,
+      status: 'importado',
+      details: [`${inserted} movimento(s) novo(s)`, `${skipped} já existente(s), ignorado(s)`],
+    };
+  });
+}
+
+/** Importa na ordem certa: cadastro → vocabulário → posições → proventos → fluxos → operações → movimentos. */
 export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
   const byName = (re: RegExp) => files.find((f) => re.test(f.name));
   const plan: Array<[RegExp, (db: DB, f: ImportFile) => ImportReport]> = [
@@ -437,6 +488,7 @@ export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
     [/provento/i, importIncome],
     [/fluxo/i, importFlows],
     [/operac/i, importTrades],
+    [/moviment/i, importMovements],
   ];
   const reports: ImportReport[] = [];
   for (const [re, fn] of plan) {

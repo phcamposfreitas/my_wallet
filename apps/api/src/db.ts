@@ -260,6 +260,28 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_account_flows_date ON account_flows(account_id, date);
   `,
+  // v9: movimentos internos da corretora que não têm nota de negociação
+  `
+  -- Dinheiro que fica na conta mas muda de produto. amount_cents com sinal, como no extrato.
+  -- kind:    compra | venda (ativos sem nota: subscrição, exercício de opção, frações)
+  --          aplicacao | resgate (Tesouro, fundos, CDB)
+  --          custo (IR, IOF, taxas, resultado de derivativos)
+  -- product: tesouro | fundo | cdb | subscricao | opcao | derivativo | outro
+  CREATE TABLE account_movements (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('compra','venda','aplicacao','resgate','custo')),
+    product TEXT NOT NULL CHECK (product IN ('tesouro','fundo','cdb','subscricao','opcao','derivativo','outro')),
+    ticker TEXT,
+    amount_cents INTEGER NOT NULL,
+    description TEXT,
+    source TEXT,
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_account_movements_date ON account_movements(account_id, date);
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
