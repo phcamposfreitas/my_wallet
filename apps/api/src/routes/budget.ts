@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.ts';
 import { registerCrud } from '../crud.ts';
+import { sharedByMonth } from '../shared-costs.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve ser YYYY-MM-DD');
 const month = z.string().regex(/^\d{4}-\d{2}$/, 'Mês deve ser YYYY-MM');
@@ -20,6 +21,12 @@ export const categorySchema = z.object({
   name: z.string().min(1),
   kind: z.enum(['expense', 'income']),
   color: z.string().nullish(),
+});
+
+export const sharedCostSchema = z.object({
+  name: z.string().trim().min(1),
+  match_pattern: z.string().trim().min(3),
+  people: z.number().int().min(2).max(20).default(3),
 });
 
 export const transactionSchema = z.object({
@@ -52,6 +59,7 @@ export function budgetRoutes(app: FastifyInstance, db: DB) {
   registerCrud(app, db, { path: '/accounts', table: 'accounts', schema: accountSchema, orderBy: 'name', skipList: true });
 
   registerCrud(app, db, { path: '/categories', table: 'categories', schema: categorySchema, orderBy: 'kind, name' });
+  registerCrud(app, db, { path: '/shared-costs', table: 'shared_costs', schema: sharedCostSchema, orderBy: 'name' });
 
   const txQuery = z.object({
     month: month.optional(),
@@ -120,7 +128,18 @@ export function budgetRoutes(app: FastifyInstance, db: DB) {
          GROUP BY c.id ORDER BY total_cents DESC`,
       )
       .all(start, end);
-    return { month: m, ...totals, balance_cents: totals.income_cents - totals.expense_cents, by_category: byCategory };
+    // Reembolso das despesas da casa rateadas: conta como receita do mês.
+    const shared = sharedByMonth(db, start, end).get(m) ?? { expense_cents: 0, reimbursement_cents: 0 };
+    const income = totals.income_cents + shared.reimbursement_cents;
+    return {
+      month: m,
+      income_cents: income,
+      expense_cents: totals.expense_cents,
+      balance_cents: income - totals.expense_cents,
+      shared_expense_cents: shared.expense_cents,
+      reimbursement_cents: shared.reimbursement_cents,
+      by_category: byCategory,
+    };
   });
 
   // Agregado do ano: por mês, categoria, conta e estabelecimento, mais proventos recebidos.
@@ -214,6 +233,10 @@ export function yearSummary(db: DB, year: number) {
     .all(start, end) as { m: number; total: number }[];
   const investmentIncome = Array.from({ length: 12 }, (_, i) => incomeRows.find((r) => r.m === i + 1)?.total ?? 0);
 
+  const shared = sharedByMonth(db, start, end);
+  const reimb = months.map((m) => shared.get(m.month)?.reimbursement_cents ?? 0);
+  const reimbursement = reimb.reduce((s, v) => s + v, 0);
+
   const expense = months.reduce((s, m) => s + m.expense_cents, 0);
   const income = months.reduce((s, m) => s + m.income_cents, 0);
   const monthsWithData = months.filter((m) => m.expense_cents > 0 || m.income_cents > 0).length;
@@ -224,13 +247,15 @@ export function yearSummary(db: DB, year: number) {
     totals: {
       expense_cents: expense,
       income_cents: income,
-      net_expense_cents: expense - income,
+      /** Reembolso das despesas da casa rateadas (já abatido do gasto líquido). */
+      reimbursement_cents: reimbursement,
+      net_expense_cents: expense - income - reimbursement,
       months_with_data: monthsWithData,
-      monthly_avg_net_expense_cents: monthsWithData ? Math.round((expense - income) / monthsWithData) : 0,
+      monthly_avg_net_expense_cents: monthsWithData ? Math.round((expense - income - reimbursement) / monthsWithData) : 0,
       investment_income_cents: investmentIncome.reduce((s, v) => s + v, 0),
       uncategorized_cents: uncategorized?.total_cents ?? 0,
     },
-    months: months.map((m, i) => ({ ...m, investment_income_cents: investmentIncome[i] })),
+    months: months.map((m, i) => ({ ...m, reimbursement_cents: reimb[i], investment_income_cents: investmentIncome[i] })),
     by_category: [...catMap.values()].filter((c) => c.total_cents !== 0).sort((a, b) => b.total_cents - a.total_cents),
     by_account: byAccount,
     top_merchants: [...merchants.values()]

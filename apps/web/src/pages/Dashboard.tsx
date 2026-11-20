@@ -28,7 +28,7 @@ export default function Dashboard() {
         <Kpi label="Patrimônio" value={money(o.net_worth_cents)} hint="Contas + corretora" />
         <Kpi label="Contas do dia a dia" value={money(o.cash_cents)} />
         <Kpi label="Investimentos" value={money(o.investments_cents)} hint={o.last_snapshot ? `Snapshot ${date(o.last_snapshot)}` : 'Nenhum snapshot importado'} />
-        <Kpi label="Resultado do mês" value={money(s.balance_cents)} tone={s.balance_cents} hint={`${money(s.income_cents)} entradas · ${money(s.expense_cents)} saídas`} />
+        <Kpi label="Resultado do mês" value={money(s.balance_cents)} tone={s.balance_cents} hint={`${money(s.income_cents)} entradas · ${money(s.expense_cents)} saídas${s.reimbursement_cents ? ` · inclui ${money(s.reimbursement_cents)} de reembolso da casa (${money(s.shared_expense_cents)} rateados)` : ''}`} />
       </div>
 
       <div className="grid two-col">

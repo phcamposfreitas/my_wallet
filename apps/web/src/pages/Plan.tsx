@@ -47,7 +47,8 @@ export default function PlanPage() {
   const p = plan.data;
   const t = p.totals;
   const hasRealized = t.realized_monthly.some((v) => v > 0);
-  const hasIncome = p.income_items.length > 0;
+  const r = p.reimbursement;
+  const hasIncome = p.income_items.length > 0 || !!r;
   const hasIncomeRealized = t.income_realized_monthly.some((v) => v > 0);
   const max = Math.max(1, ...t.monthly, ...t.realized_monthly, ...t.income_monthly);
   const est = estimate.data;
@@ -149,7 +150,10 @@ export default function PlanPage() {
           <div className="page-head" style={{ marginBottom: 12 }}>
             <div>
               <h2 style={{ margin: 0 }}>Receitas previstas</h2>
-              <p className="small muted" style={{ margin: '4px 0 0' }}>Entradas com que você conta em {year}: trabalho, aluguéis e renda da carteira.</p>
+              <p className="small muted" style={{ margin: '4px 0 0' }}>
+                Entradas com que você conta em {year}: trabalho, aluguéis, renda da carteira e o reembolso das despesas da casa, calculado
+                a partir dos gastos rateados (cadastre o rateio em Cadastros).
+              </p>
             </div>
             {canAddEstimate && (
               <button
@@ -187,6 +191,23 @@ export default function PlanPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {r && (
+                    <tr>
+                      <td>
+                        {r.name}
+                        <div className="small muted" style={{ whiteSpace: 'normal', maxWidth: 320 }}>
+                          calculado: {r.items.map((i) => `${i.name} (÷${i.people})`).join(', ') || 'nenhum gasto rateado no plano'} · total da casa{' '}
+                          {money(r.shared_expense_annual_cents)} no ano
+                        </div>
+                      </td>
+                      <td><span className="badge">Rateio</span></td>
+                      <td className="num">{money(Math.round(r.annual_cents / 12))}</td>
+                      <td className="small">média</td>
+                      <td className="num">{money(r.annual_cents)}</td>
+                      {hasIncomeRealized && <td className="num muted">{money(r.realized_cents)}</td>}
+                      <td />
+                    </tr>
+                  )}
                   {p.income_items.map((i) => (
                     <ItemRow key={i.id} item={i} income showRealized={hasIncomeRealized} onSave={(body) => patch.mutate({ id: i.id, body })} onDelete={() => confirm(`Remover "${i.name}" do plano?`) && remove.mutate(i.id)} />
                   ))}
@@ -298,6 +319,11 @@ function ItemRow({ item, income, showRealized, onSave, onDelete }: { item: PlanI
     <tr>
       <td>
         {item.name}
+        {item.shared_people && (
+          <span className="badge accent" style={{ marginLeft: 6 }} title={`Dividido entre ${item.shared_people} moradores: sua parte é ${money(Math.round(item.amount_cents / item.shared_people))} por mês`}>
+            ÷{item.shared_people}
+          </span>
+        )}
         {item.notes && <div className="small muted" style={{ whiteSpace: 'normal', maxWidth: 320 }}>{item.notes}</div>}
       </td>
       <td><span className={`badge ${item.kind === 'fixo' ? 'accent' : item.kind === 'variavel' ? 'warn' : ''}`}>{KIND_LABEL[item.kind]}</span></td>

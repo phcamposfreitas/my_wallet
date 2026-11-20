@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type Account, type Category } from '../lib/api';
+import { api, type Account, type Category, type SharedCost } from '../lib/api';
 import { ACCOUNT_TYPE_LABEL, money, parseMoney, signClass } from '../lib/format';
 import { Loading } from '../components/ui';
 
@@ -8,10 +8,11 @@ export default function Settings() {
   return (
     <>
       <h1>Cadastros</h1>
-      <p className="subtitle">Contas e categorias usadas nos lançamentos</p>
+      <p className="subtitle">Contas, categorias e o rateio das despesas da casa</p>
       <div className="grid two-col">
         <Accounts />
         <Categories />
+        <SharedCosts />
       </div>
     </>
   );
@@ -186,6 +187,97 @@ function Categories() {
         <button className="primary" disabled={create.isPending}>
           Adicionar
         </button>
+        {create.error && <span className="error small">{(create.error as Error).message}</span>}
+      </form>
+    </div>
+  );
+}
+
+/** Despesas da casa divididas entre moradores: o reembolso dos outros entra como receita. */
+function SharedCosts() {
+  const qc = useQueryClient();
+  const { data, error } = useQuery({ queryKey: ['shared-costs'], queryFn: () => api.get<SharedCost[]>('/shared-costs') });
+  const empty = { name: '', match_pattern: '', people: '3' };
+  const [f, setF] = useState(empty);
+  const refresh = () => {
+    for (const k of ['shared-costs', 'plan', 'summary', 'summary-year']) qc.invalidateQueries({ queryKey: [k] });
+  };
+  const create = useMutation({
+    mutationFn: (body: unknown) => api.post('/shared-costs', body),
+    onSuccess: () => {
+      setF(empty);
+      refresh();
+    },
+  });
+  const patch = useMutation({ mutationFn: ({ id, people }: { id: number; people: number }) => api.patch(`/shared-costs/${id}`, { people }), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: (id: number) => api.del(`/shared-costs/${id}`), onSuccess: refresh });
+
+  if (!data) return <Loading error={error} />;
+  return (
+    <div className="card" style={{ gridColumn: '1 / -1' }}>
+      <h2>Rateio da casa</h2>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Aluguel, luz, água, internet, limpeza: você paga o valor inteiro e os outros moradores devolvem a parte deles. O gasto aparece
+        inteiro e o reembolso entra como receita no planejamento, no painel e no ano. O padrão é um trecho da descrição do lançamento e
+        também marca o item do planejamento com o mesmo padrão.
+      </p>
+      <div className="table-wrap" style={{ marginBottom: 16 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Despesa</th>
+              <th>Padrão</th>
+              <th className="num">Moradores</th>
+              <th>Reembolso</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((c) => (
+              <tr key={c.id}>
+                <td>{c.name}</td>
+                <td className="small muted">{c.match_pattern}</td>
+                <td className="num">
+                  <select
+                    value={c.people}
+                    onChange={(e) => patch.mutate({ id: c.id, people: Number(e.target.value) })}
+                    aria-label={`Moradores que dividem ${c.name}`}
+                  >
+                    {[2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </td>
+                <td className="small">{c.people - 1}/{c.people} volta · sua parte 1/{c.people}</td>
+                <td><button className="ghost" title="Remover" onClick={() => confirm(`Parar de ratear "${c.name}"?`) && remove.mutate(c.id)}>✕</button></td>
+              </tr>
+            ))}
+            {!data.length && (
+              <tr>
+                <td colSpan={5} className="empty">Nenhuma despesa rateada.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <form
+        className="inline"
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate({ name: f.name, match_pattern: f.match_pattern, people: Number(f.people) });
+        }}
+      >
+        <label className="field" style={{ flex: '1 1 140px' }}>
+          Despesa
+          <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required placeholder="Ex.: Conta de água" />
+        </label>
+        <label className="field" style={{ flex: '1 1 160px' }}>
+          Padrão na descrição
+          <input value={f.match_pattern} onChange={(e) => setF({ ...f, match_pattern: e.target.value })} required minLength={3} placeholder="Ex.: COPASA" />
+        </label>
+        <label className="field">
+          Moradores
+          <input value={f.people} onChange={(e) => setF({ ...f, people: e.target.value })} type="number" min={2} max={20} style={{ width: 70 }} />
+        </label>
+        <button className="primary" disabled={create.isPending}>Adicionar</button>
         {create.error && <span className="error small">{(create.error as Error).message}</span>}
       </form>
     </div>

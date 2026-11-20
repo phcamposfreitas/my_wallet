@@ -4,6 +4,7 @@ import type { DB } from '../db.ts';
 import { idParam } from '../crud.ts';
 import { merchantKey } from './budget.ts';
 import { normalizeText } from './rules.ts';
+import { loadSharedRules, reimbursementOf, sharedByMonth, sharedRuleFor } from '../shared-costs.ts';
 
 /**
  * Planejamento por ano: gastos previstos (fixos, variáveis e parcelamentos) e receitas
@@ -85,6 +86,7 @@ export function buildPlan(db: DB, year: number) {
   const normTx = txs.map((t) => ({ ...t, norm: normalizeText(t.description) }));
 
   const proventos = incomeByMonth(db, `${year}-01-01`, `${year + 1}-01-01`);
+  const rules = loadSharedRules(db);
 
   const all = items.map((i) => {
     const planned = ALL_MONTHS.map((m) => (i.months.includes(m) ? i.amount_cents : 0));
@@ -94,8 +96,11 @@ export function buildPlan(db: DB, year: number) {
       if (i.source === 'proventos') return proventos.get(year * 12 + m - 1) ?? 0;
       return pattern ? normTx.filter((t) => t.m === m && t.norm.includes(pattern)).reduce((s, t) => s + sign * t.amount_cents, 0) : 0;
     });
+    const rule = i.direction === 'expense' ? sharedRuleFor(rules, i.match_pattern ?? i.name) : null;
     return {
       ...i,
+      /** Moradores que dividem o gasto (null = gasto só do titular). */
+      shared_people: rule?.people ?? null,
       planned,
       realized,
       annual_cents: planned.reduce((s, v) => s + v, 0),
@@ -105,7 +110,26 @@ export function buildPlan(db: DB, year: number) {
 
   const out = all.filter((i) => i.direction === 'expense');
   const income = all.filter((i) => i.direction === 'income');
-  const incomeMonthly = ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.planned[k], 0));
+
+  // Reembolso da casa: os outros moradores devolvem a parte deles das despesas rateadas.
+  const sharedItems = out.filter((i) => i.shared_people);
+  const sharedReal = sharedByMonth(db, `${year}-01-01`, `${year + 1}-01-01`, rules);
+  const reimbPlanned = ALL_MONTHS.map((_, k) => sharedItems.reduce((s, i) => s + reimbursementOf(i.planned[k], i.shared_people!), 0));
+  const reimbRealized = ALL_MONTHS.map((m) => sharedReal.get(`${year}-${String(m).padStart(2, '0')}`)?.reimbursement_cents ?? 0);
+  const reimbursement =
+    sharedItems.length || reimbRealized.some((v) => v)
+      ? {
+          name: 'Reembolso das despesas da casa',
+          items: sharedItems.map((i) => ({ name: i.name, people: i.shared_people!, annual_cents: i.annual_cents })),
+          shared_expense_annual_cents: sharedItems.reduce((s, i) => s + i.annual_cents, 0),
+          planned: reimbPlanned,
+          realized: reimbRealized,
+          annual_cents: reimbPlanned.reduce((s, v) => s + v, 0),
+          realized_cents: reimbRealized.reduce((s, v) => s + v, 0),
+        }
+      : null;
+
+  const incomeMonthly = ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.planned[k], 0) + reimbPlanned[k]);
   const incomeAnnual = incomeMonthly.reduce((s, v) => s + v, 0);
 
   const monthly = ALL_MONTHS.map((_, k) => out.reduce((s, i) => s + i.planned[k], 0));
@@ -124,10 +148,11 @@ export function buildPlan(db: DB, year: number) {
     year,
     items: out,
     income_items: income,
+    reimbursement,
     totals: {
       income_annual_cents: incomeAnnual,
       income_monthly: incomeMonthly,
-      income_realized_monthly: ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.realized[k], 0)),
+      income_realized_monthly: ALL_MONTHS.map((_, k) => income.reduce((s, i) => s + i.realized[k], 0) + reimbRealized[k]),
       balance_monthly: ALL_MONTHS.map((_, k) => incomeMonthly[k] - monthly[k]),
       balance_annual_cents: incomeAnnual - monthly.reduce((s, v) => s + v, 0),
       annual_cents: monthly.reduce((s, v) => s + v, 0),

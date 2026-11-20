@@ -116,3 +116,40 @@ describe('receitas previstas', () => {
     expect(p.income_items[0].realized.slice(4, 8)).toEqual([1_000, 30_000, 50_000, 2_000]);
   });
 });
+
+describe('rateio da casa', () => {
+  it('divide por 3: reembolso de 2/3 no plano, no mês e no ano', async () => {
+    expect((await req('POST', '/api/shared-costs', { name: 'Aluguel', match_pattern: 'aluguel casa' })).body.people).toBe(3);
+    await req('POST', '/api/shared-costs', { name: 'Luz', match_pattern: 'CEMIG' });
+    expect((await req('POST', '/api/shared-costs', { name: 'X', match_pattern: 'XYZ', people: 1 })).status).toBe(400);
+
+    await req('POST', '/api/plan/items', [
+      { year: 2026, name: 'Aluguel', amount_cents: 300_000, match_pattern: 'ALUGUEL CASA' },
+      { year: 2026, name: 'Luz', kind: 'variavel', amount_cents: 30_000, match_pattern: 'Cemig' },
+      { year: 2026, name: 'Academia', amount_cents: 10_000, match_pattern: 'ACADEMIA' },
+      { year: 2026, direction: 'income', name: 'Salário', amount_cents: 1_000_000 },
+    ]);
+    await tx('2026-03-05', 'Aluguel Casa — 03/2026', -300_000);
+    await tx('2026-03-10', 'Cemig — conta de 2026-02', -30_001);
+    await tx('2026-03-12', 'ACADEMIA', -10_000);
+
+    const p = (await req('GET', '/api/plan?year=2026')).body;
+    expect(p.items.find((i: { name: string }) => i.name === 'Aluguel').shared_people).toBe(3);
+    expect(p.items.find((i: { name: string }) => i.name === 'Academia').shared_people).toBeNull();
+    expect(p.reimbursement.planned[0]).toBe(220_000); // 2/3 de 330.000
+    expect(p.reimbursement.annual_cents).toBe(12 * 220_000);
+    expect(p.totals.income_monthly[0]).toBe(1_220_000);
+    expect(p.totals.balance_monthly[0]).toBe(1_220_000 - 340_000);
+    expect(p.reimbursement.realized[2]).toBe(200_000 + 20_001);
+    expect(p.totals.income_realized_monthly[2]).toBe(220_001);
+
+    const m = (await req('GET', '/api/summary/month?month=2026-03')).body;
+    expect(m).toMatchObject({ expense_cents: 340_001, shared_expense_cents: 330_001, reimbursement_cents: 220_001, income_cents: 220_001 });
+    expect(m.balance_cents).toBe(-120_000); // 1/3 da casa + academia
+
+    const y = (await req('GET', '/api/summary/year?year=2026')).body;
+    expect(y.totals.reimbursement_cents).toBe(220_001);
+    expect(y.totals.net_expense_cents).toBe(120_000);
+    expect(y.months[2].reimbursement_cents).toBe(220_001);
+  });
+});

@@ -282,6 +282,20 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_account_movements_date ON account_movements(account_id, date);
   `,
+  // v10: rateio das despesas da casa
+  `
+  -- Despesas da casa divididas entre moradores (aluguel, luz, água, internet, limpeza).
+  -- O lançamento cuja descrição contém match_pattern é pago inteiro pelo titular; os outros
+  -- moradores devolvem (people − 1)/people dele. Esse reembolso entra como receita no
+  -- planejamento e nos resumos do mês e do ano.
+  CREATE TABLE shared_costs (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    match_pattern TEXT NOT NULL UNIQUE,
+    people INTEGER NOT NULL DEFAULT 3 CHECK (people >= 2),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
