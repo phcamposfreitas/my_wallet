@@ -67,6 +67,7 @@ function positionsOf(db: DB, snapshotId: number): PositionRow[] {
 
 const pct = (num: number, den: number | null) => (den ? (num / den) * 100 : null);
 const DAY = 86_400_000;
+const YIELD_WINDOW_DAYS = 365;
 
 export function buildPortfolio(db: DB) {
   const ids = latestSnapshotIds(db);
@@ -80,11 +81,7 @@ export function buildPortfolio(db: DB) {
       }[]
     ).map((r) => [r.asset_id, r.total]),
   );
-  const incomeWindow = db.prepare('SELECT MIN(date) AS first, MAX(date) AS last, COALESCE(SUM(amount_cents),0) AS total FROM asset_income').get() as {
-    first: string | null;
-    last: string | null;
-    total: number;
-  };
+  const firstIncome = (db.prepare('SELECT MIN(date) AS first FROM asset_income').get() as { first: string | null }).first;
 
   const positions = ids.flatMap((id) =>
     positionsOf(db, id).map((p) => {
@@ -126,17 +123,32 @@ export function buildPortfolio(db: DB) {
   const receivable = balances.filter((b) => b.kind === 'proventos_a_receber').reduce((s, b) => s + b.value_cents, 0);
   const cashPayersValue = positions.filter((p) => p.pays_cash).reduce((s, p) => s + p.value_cents, 0);
 
-  // Yield anualizado sobre a janela de proventos registrada (até a data do último snapshot).
+  // Yield anualizado sobre os proventos dos 12 meses até o último snapshot. Uma janela maior
+  // dividiria anos de proventos de uma carteira menor pelo valor de hoje e subestimaria o yield.
+  // Com menos de 12 meses de histórico, usa o que houver e anualiza.
   let yieldInfo = null;
   const lastSnapshot = snapshots[0]?.taken_at.slice(0, 10);
-  if (incomeWindow.first && lastSnapshot && positionsValue > 0) {
-    const days = Math.max(1, (Date.parse(lastSnapshot) - Date.parse(incomeWindow.first)) / DAY);
-    const annual = (incomeWindow.total / days) * 365;
+  if (firstIncome && lastSnapshot && positionsValue > 0) {
+    const yearBefore = new Date(Date.parse(lastSnapshot) - YIELD_WINDOW_DAYS * DAY).toISOString().slice(0, 10);
+    const shortHistory = firstIncome > yearBefore;
+    const start = shortHistory ? firstIncome : yearBefore;
+    // Janela (início, último snapshot]; com histórico curto o primeiro provento entra.
+    const income = (
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(amount_cents),0) AS total FROM asset_income
+           WHERE date ${shortHistory ? '>=' : '>'} ? AND date <= ?`,
+        )
+        .get(start, lastSnapshot) as { total: number }
+    ).total;
+    const days = Math.max(1, (Date.parse(lastSnapshot) - Date.parse(start)) / DAY);
+    const annual = (income / days) * 365;
     yieldInfo = {
-      window_start: incomeWindow.first,
+      window_start: start,
       window_end: lastSnapshot,
       window_days: Math.round(days),
-      income_cents: incomeWindow.total,
+      income_cents: income,
+      income_history_start: firstIncome,
       annualized_pct_total: pct(annual, positionsValue),
       annualized_pct_cash_payers: pct(annual, cashPayersValue),
     };

@@ -116,6 +116,25 @@ describe('importação XP', () => {
     expect(count()).toBe(4);
   });
 
+  it('yield usa só os proventos dos 12 meses até o último snapshot', () => {
+    importXpFiles(db, files);
+    const short = buildPortfolio(db).yield!;
+    // Histórico curto: janela começa no primeiro provento (15/10) e vai até 12/11.
+    expect(short.window_start).toBe('2026-10-15');
+    expect(short.window_days).toBe(28);
+    expect(short.income_cents).toBe(36_000);
+
+    const old = 'FFFF11,2025-11-12,,rendimento_fii,999.00,210,4.757143,extrato,2026-11-19,\n'
+      + 'FFFF11,2025-11-13,,rendimento_fii,100.00,210,0.476190,extrato,2026-11-19,\n';
+    importXpFiles(db, [{ name: 'fato_provento.csv', text: PROVENTOS + old }]);
+    const y = buildPortfolio(db).yield!;
+    // 12/11/2025 fica fora (janela aberta no início); 13/11/2025 entra.
+    expect(y.window_start).toBe('2025-11-12');
+    expect(y.window_days).toBe(365);
+    expect(y.income_cents).toBe(46_000);
+    expect(y.income_history_start).toBe('2025-11-12');
+  });
+
   it('recusa snapshot com linha inconsistente', () => {
     const bad = H + '\n2026-12-01,10:00,Acoes,Renda Variavel Brasil,AAAA3,1000,19.11,20.00,25000.00,19110.00,,,,XP,';
     const [r] = importXpFiles(db, [{ name: 'carteira_ruim.csv', text: bad }]);

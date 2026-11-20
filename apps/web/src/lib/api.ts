@@ -114,6 +114,8 @@ export interface Portfolio {
     window_end: string;
     window_days: number;
     income_cents: number;
+    /** Data do primeiro provento registrado (início do histórico, não da janela do yield). */
+    income_history_start: string;
     annualized_pct_total: number | null;
     annualized_pct_cash_payers: number | null;
   };
