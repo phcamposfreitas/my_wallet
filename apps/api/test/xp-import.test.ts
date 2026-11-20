@@ -168,6 +168,25 @@ describe('importação XP', () => {
     ]);
   });
 
+  it('importa operações das notas sem duplicar e sem exigir posição prévia', () => {
+    const OPS = `nota,data,liquidacao,ticker,classe,lado,mercado,quantidade,preco,valor,taxas,especificacao
+100,2026-01-10,2026-01-12,AAAA3,,buy,VISTA,100,18.00,1800.00,0.50,BRASIL ON NM
+100,2026-01-10,2026-01-12,AAAA3,,buy,VISTA,100,18.00,1800.00,0.50,BRASIL ON NM
+101,2026-02-10,2026-02-12,ZZZZ3,,sell,VISTA,300,5.00,1500.00,0.40,ZETA ON NM
+102,2026-03-10,2026-03-12,BOVA11,etf,buy,VISTA,10,100.00,1000.00,0.30,ISHARES IBOV CI
+`;
+    const [r] = importXpFiles(db, [{ name: 'fato_operacao.csv', text: OPS }]);
+    expect(r.details).toEqual(['4 operação(ões) nova(s)', '0 já existente(s), ignorada(s)']);
+    // Venda de ativo sem compra registrada entra (veio por custódia ou evento).
+    const zzzz = db.prepare("SELECT t.side, t.quantity FROM trades t JOIN assets a ON a.id = t.asset_id WHERE a.ticker = 'ZZZZ3'").get();
+    expect(zzzz).toEqual({ side: 'sell', quantity: 300 });
+    expect((db.prepare("SELECT asset_class FROM assets WHERE ticker = 'BOVA11'").get() as { asset_class: string }).asset_class).toBe('etf');
+
+    const [again] = importXpFiles(db, [{ name: 'fato_operacao.csv', text: OPS + '103,2026-04-10,2026-04-12,AAAA3,,sell,VISTA,50,20.00,1000.00,0.20,BRASIL ON NM\n' }]);
+    expect(again.details).toEqual(['1 operação(ões) nova(s)', '4 já existente(s), ignorada(s)']);
+    expect((db.prepare('SELECT COUNT(*) AS n, SUM(fees_cents) AS f FROM trades').get() as { n: number; f: number })).toEqual({ n: 5, f: 190 });
+  });
+
   it('recusa fluxo de tipo desconhecido', () => {
     const [r] = importXpFiles(db, [{ name: 'fato_fluxo.csv', text: 'data,tipo,valor,descricao,fonte\n2026-01-01,compra,-10.00,x,extrato\n' }]);
     expect(r.status).toBe('erro');
