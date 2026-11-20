@@ -182,6 +182,19 @@ export interface Income {
   notes: string | null;
 }
 
+export interface Trade {
+  id: number;
+  asset_id: number;
+  ticker: string;
+  account_name: string;
+  date: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  price_cents: number;
+  fees_cents: number;
+  notes: string | null;
+}
+
 export interface ImportReport {
   file: string;
   status: 'importado' | 'ja_importado' | 'erro';

@@ -9,6 +9,7 @@ import { parseCsv, toCents, toNum } from './csv.ts';
  * - carteira_xp_historico.csv  snapshots de posição (formato longo)
  * - fato_provento.csv      proventos pagos, lançamento a lançamento do extrato
  * - fato_fluxo.csv         entradas e saídas de dinheiro da conta (aportes, retiradas, câmbio, cashback)
+ * - fato_operacao.csv      compras e vendas à vista das notas de negociação
  *
  * Regras:
  * - Append-only: o mesmo arquivo (por hash) não é importado duas vezes, um
@@ -375,7 +376,58 @@ export function importFlows(db: DB, file: ImportFile): ImportReport {
   });
 }
 
-/** Importa na ordem certa: cadastro → vocabulário → posições → proventos → fluxos. */
+/**
+ * Compras e vendas das notas de negociação
+ * (`nota,data,liquidacao,ticker,classe,lado,mercado,quantidade,preco,valor,taxas,especificacao`).
+ * Idempotente por operação: a chave é nota + ativo + lado + quantidade + preço, contada por ocorrência
+ * (uma nota pode ter execuções iguais). Não aplica a regra de posição não negativa do cadastro manual:
+ * ações que entraram por transferência de custódia, subscrição ou evento não têm nota de compra.
+ */
+export function importTrades(db: DB, file: ImportFile): ImportReport {
+  const rows = parseCsv(file.text);
+  return inTransaction(db, () => {
+    const importId = registerImport(db, file, 'xp:operacoes');
+    if (importId === null) return { file: file.name, status: 'ja_importado', details: [] };
+    const accountId = ensureXpAccount(db);
+    const countExisting = db.prepare(
+      `SELECT COUNT(*) AS n FROM trades
+       WHERE account_id = ? AND asset_id = ? AND side = ? AND quantity = ? AND price_cents = ? AND notes = ?`,
+    );
+    const insert = db.prepare(
+      `INSERT INTO trades (account_id, asset_id, date, side, quantity, price_cents, fees_cents, notes, import_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const seen = new Map<string, number>();
+    let inserted = 0;
+    let skipped = 0;
+    for (const r of rows) {
+      const qty = toNum(r.quantidade);
+      const price = toCents(r.preco);
+      if (!qty || qty <= 0 || price === null) throw new Error(`Operação inválida: nota ${r.nota} ${r.ticker}`);
+      if (r.lado !== 'buy' && r.lado !== 'sell') throw new Error(`Lado inválido: ${r.lado} (nota ${r.nota})`);
+      const cls = (ASSET_CLASSES.has(r.classe as AssetClass) ? r.classe : guessClassFromTicker(r.ticker)) as AssetClass;
+      const assetId = findOrCreateAsset(db, r.ticker, { asset_class: cls });
+      const notes = `nota ${r.nota}`;
+      const key = `${assetId}|${r.lado}|${qty}|${price}|${notes}`;
+      const occurrence = (seen.get(key) ?? 0) + 1;
+      seen.set(key, occurrence);
+      const existing = (countExisting.get(accountId, assetId, r.lado, qty, price, notes) as { n: number }).n;
+      if (occurrence <= existing) {
+        skipped++;
+        continue;
+      }
+      insert.run(accountId, assetId, r.data, r.lado, qty, price, toCents(r.taxas) ?? 0, notes, importId);
+      inserted++;
+    }
+    return {
+      file: file.name,
+      status: 'importado',
+      details: [`${inserted} operação(ões) nova(s)`, `${skipped} já existente(s), ignorada(s)`],
+    };
+  });
+}
+
+/** Importa na ordem certa: cadastro → vocabulário → posições → proventos → fluxos → operações. */
 export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
   const byName = (re: RegExp) => files.find((f) => re.test(f.name));
   const plan: Array<[RegExp, (db: DB, f: ImportFile) => ImportReport]> = [
@@ -384,6 +436,7 @@ export function importXpFiles(db: DB, files: ImportFile[]): ImportReport[] {
     [/carteira/i, importPositions],
     [/provento/i, importIncome],
     [/fluxo/i, importFlows],
+    [/operac/i, importTrades],
   ];
   const reports: ImportReport[] = [];
   for (const [re, fn] of plan) {

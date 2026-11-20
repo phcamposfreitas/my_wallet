@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from 'react-router';
 import PositionsTab from './portfolio/PositionsTab';
 import ChangesTab from './portfolio/ChangesTab';
 import IncomeTab from './portfolio/IncomeTab';
+import TradesTab from './portfolio/TradesTab';
 import ImportTab from './portfolio/ImportTab';
 
 export default function Portfolio() {
@@ -15,12 +16,14 @@ export default function Portfolio() {
         </NavLink>
         <NavLink to="/carteira/mudancas">Mudanças entre coletas</NavLink>
         <NavLink to="/carteira/proventos">Proventos</NavLink>
+        <NavLink to="/carteira/operacoes">Operações</NavLink>
         <NavLink to="/carteira/importar">Importar</NavLink>
       </nav>
       <Routes>
         <Route index element={<PositionsTab />} />
         <Route path="mudancas" element={<ChangesTab />} />
         <Route path="proventos" element={<IncomeTab />} />
+        <Route path="operacoes" element={<TradesTab />} />
         <Route path="importar" element={<ImportTab />} />
       </Routes>
     </>
