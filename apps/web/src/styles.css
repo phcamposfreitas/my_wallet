@@ -205,3 +205,12 @@ button.expander:hover { color: var(--accent); }
 .stack-bar > div { min-height: 1px; }
 td.flag-corte { color: var(--neg); font-weight: 600; }
 td.flag-sem { color: var(--neg); }
+
+/* Política: barras de atual × alvo/teto */
+.gauge { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; min-width: 120px; }
+.gauge-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 5px; }
+.gauge-fill.bad { background: var(--neg); }
+.gauge-band { position: absolute; top: -3px; bottom: -3px; background: color-mix(in srgb, var(--pos) 28%, transparent); border-radius: 3px; }
+.gauge-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
+.badge.ok { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); border-color: transparent; }
+.badge.bad { background: color-mix(in srgb, var(--neg) 16%, transparent); color: var(--neg); border-color: transparent; }
