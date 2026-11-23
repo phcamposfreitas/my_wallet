@@ -427,7 +427,7 @@ export interface PolicyView {
   available: boolean;
   as_of: { snapshot: string | null };
   total_cents: number;
-  policy?: { status: string; approved: boolean; approved_on: string | null; next_review: string | null };
+  policy?: { status: string; approved: boolean; approved_on: string | null; next_review: string | null; monthly_contribution_cents: number | null };
   body?: string;
   allocation?: {
     key: string;
@@ -454,6 +454,20 @@ export interface PolicyView {
   }[];
   factors?: { key: string; label: string; value_cents: number; current_pct: number; count: number }[];
   blocked?: { ticker: string; thesis: string | null; current_pct: number; reasons: string[] }[];
+  room?: {
+    id: string;
+    title: string;
+    status: string;
+    group: string;
+    group_label: string;
+    group_status: PolicyStatus;
+    current_pct: number;
+    room_pct: number | null;
+    room_cents: number | null;
+    limited_by: string | null;
+    assets: { ticker: string; current_pct: number; room_pct: number | null; room_cents: number | null; limited_by: string | null }[];
+    blocked_assets: string[];
+  }[];
   tail?: { count: number; current_pct: number; without_thesis: string[] };
   reserve?: { value_cents: number; current_pct: number; tickers: string[] };
   tolerance?: {

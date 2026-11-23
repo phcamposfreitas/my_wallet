@@ -97,11 +97,40 @@ describe('política de investimentos', () => {
     expect(blocked.FFFF11).toEqual(['acima do teto por fundo']);
     expect(blocked['LFT mar/2029']).toBeUndefined();
 
+    // Espaço para aporte: nada aqui tem tese liberada (T1 em revisão; FFFF11 acima do teto por fundo;
+    // a LFT não tem tese), e a T4 está no teto de crédito.
+    expect(p.room).toEqual([]);
     expect(p.reserve).toMatchObject({ value_cents: 200_000, current_pct: 20 });
     expect(p.tolerance.drawdown.pct).toBeCloseTo(-20);
     expect(p.tolerance.drawdown).toMatchObject({ source: 'coletas', points: 2 }); // sem cotações importadas
     expect(p.tolerance.drawdown.peak_at.slice(0, 10)).toBe('2026-10-05');
     expect(p.tolerance.action).toBe('rebalancear'); // entre −15% e −25%
     expect(p.tail).toMatchObject({ count: 0 });
+  });
+});
+
+describe('onde cabe aporte novo', () => {
+  it('lista teses liberadas com a folga até o teto mais apertado', async () => {
+    writeFileSync(join(dir, 'politica.md'), POLITICA.replace('status: aprovada (com pendências)', 'status: aprovada\naporte_mensal: 3000').replace('acao=15', 'acao=25'));
+    writeFileSync(join(dir, 'teses', 'T1.md'), tese('T1', 'AAAA3')); // doméstica, ativa
+    writeFileSync(join(dir, 'teses', 'T2.md'), tese('T2', 'BBBB3')); // commodities
+    writeFileSync(join(dir, 'teses', 'T4.md'), tese('T4', 'FFFF11')); // crédito, fundo acima do teto
+    writeFileSync(join(dir, 'teses', 'T9.md'), tese('T9', '').replace('---\n', '---\nresponsavel: analista-fii\n')); // sem posição
+    const p = await get('/api/policy');
+    expect(p.policy.monthly_contribution_cents).toBe(300_000);
+    const room = Object.fromEntries(p.room.map((r: { id: string }) => [r.id, r]));
+
+    // Carteira de R$ 10.000. O espaço em reais é de dinheiro novo: (teto × total − valor) ÷ (1 − teto).
+    // T1: AAAA3 pesa 20%. Por ação 25%: 500 ÷ 0,75 = 666,67. Fator doméstico 75% − 70%: 500 ÷ 0,25 = 2.000.
+    expect(room.T1).toMatchObject({ group: 'acoes', group_status: 'dentro', limited_by: 'teto do fator doméstico', room_cents: 200_000 });
+    expect(room.T1.room_pct).toBeCloseTo(5);
+    expect(room.T1.assets[0]).toMatchObject({ ticker: 'AAAA3', room_cents: 66_667, limited_by: 'teto por ação' });
+    // T2: BBBB3 (10%) não é doméstico: vale o teto por ação, 1.500 ÷ 0,75 = 2.000.
+    expect(room.T2.assets[0]).toMatchObject({ ticker: 'BBBB3', limited_by: 'teto por ação', room_cents: 200_000 });
+    expect(room.T2.assets[0].room_pct).toBeCloseTo(15);
+    // T4: crédito em 50% contra teto de 40%: sem espaço, some da lista.
+    expect(room.T4).toBeUndefined();
+    // T9: sem posição; a classe vem do responsável, e limita o fator doméstico.
+    expect(room.T9).toMatchObject({ group: 'fiis', current_pct: 0, assets: [], limited_by: 'teto do fator doméstico' });
   });
 });
