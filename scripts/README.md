@@ -54,3 +54,18 @@ PDF com senha ──desbloquear──▶ PDF aberto ──pdftotext──▶ tex
 
 Categorias são atribuídas por palavra-chave e de forma conservadora: o que não
 for reconhecido fica sem categoria para ajustar na interface.
+
+## Dados de mercado
+
+`atualizar-mercado.sh` mantém as cotações e as séries em dia. Baixa o COTAHIST diário da B3
+dos últimos pregões que ainda não estão em `b3/` (na pasta do banco), importa pela API e
+continua as séries do Banco Central de onde pararam. Pode rodar à vontade: nada é duplicado.
+
+```bash
+WALLET_DB="$WALLET_DB" API_PORT=3340 sh scripts/atualizar-mercado.sh
+```
+
+A B3 publica o arquivo do dia à noite, e dia sem pregão não tem arquivo. Para rodar todo dia
+útil, agende o script no launchd com `StartCalendarInterval`, passando `WALLET_DB` e
+`API_PORT` em `EnvironmentVariables`. O histórico anterior vem dos arquivos anuais
+(`npm run download:cotahist -w apps/api -- 2025`).
