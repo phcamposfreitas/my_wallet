@@ -374,6 +374,7 @@ export interface Theses {
 
 export interface ThesisDetail extends Thesis {
   body: string;
+  income: ThesisIncome | null;
   as_of: ThesesAsOf;
   total_cents: number;
 }
@@ -391,4 +392,31 @@ export interface ActionItem {
   status: 'aberto' | 'feito' | 'descartado';
   resolved_at: string | null;
   resolution_note: string | null;
+}
+
+export interface ThesesIncome {
+  months: string[];
+  income_until: string | null;
+  series: { key: string; label: string; monthly: number[]; total_12m_cents: number }[];
+  total_monthly: number[];
+  avg_3m_cents: number;
+  avg_12m_cents: number;
+  coverage: { months: string[]; income_avg_cents: number; expense_avg_cents: number; pct: number | null } | null;
+}
+
+export interface ThesisIncome {
+  months: string[];
+  income_until: string;
+  assets: {
+    ticker: string;
+    monthly: number[];
+    per_unit: (number | null)[];
+    flags: ('corte' | 'sem_pagamento' | null)[];
+    total_cents: number;
+    yield_on_price_pct: number | null;
+    yield_on_cost_pct: number | null;
+  }[];
+  total_monthly: number[];
+  avg_3m_cents: number;
+  signals: { ticker: string; month: string; kind: 'corte' | 'sem_pagamento'; per_unit: number | null }[];
 }

@@ -1,14 +1,16 @@
 import { Fragment, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { api, type Theses, type ThesisAsset, type ThesisGroup } from '../../lib/api';
-import { ASSET_CLASS_LABEL, money, pct, signClass } from '../../lib/format';
+import { api, type Theses, type ThesesIncome, type ThesisAsset, type ThesisGroup } from '../../lib/api';
+import { ASSET_CLASS_LABEL, date, money, pct, signClass } from '../../lib/format';
+import StackedColumns, { shortMonth } from '../../components/StackedColumns';
 import { Kpi, Loading } from '../../components/ui';
 import Deadlines from '../../components/Deadlines';
 import { AsOf, ReviewDate, StatusBadge } from './thesis-ui';
 
 export default function ThesesTab() {
   const { data, error } = useQuery({ queryKey: ['theses'], queryFn: () => api.get<Theses>('/theses') });
+  const income = useQuery({ queryKey: ['theses-income'], queryFn: () => api.get<ThesesIncome>('/theses/income?months=24') });
   const [open, setOpen] = useState<Set<string>>(new Set());
   if (!data) return <Loading error={error} />;
 
@@ -66,6 +68,8 @@ export default function ThesesTab() {
         />
         <Kpi label="Proventos em 12 meses" value={money(groups.reduce((s, g) => s + g.group.income_12m_cents, 0))} hint="só das posições atuais" />
       </div>
+
+      {income.data && income.data.months.length > 0 && <IncomeCard r={income.data} />}
 
       <div className="card">
         <div className="page-head" style={{ marginBottom: 8 }}>
@@ -146,6 +150,34 @@ export default function ThesesTab() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function IncomeCard({ r }: { r: ThesesIncome }) {
+  const c = r.coverage;
+  const range = (m: string[]) => `${shortMonth(m[0])} a ${shortMonth(m[m.length - 1])}`;
+  return (
+    <div className="card">
+      <h2 style={{ marginBottom: 4 }}>Renda por tese</h2>
+      <p className="small muted" style={{ margin: '0 0 10px' }}>
+        Proventos recebidos por mês, pela tese atual de cada ativo · extrato até {r.income_until ? date(r.income_until) : '—'} · "Ex-posições" é a renda
+        de ativos que já saíram da carteira
+      </p>
+      <div className="grid kpis" style={{ marginBottom: 12 }}>
+        <Kpi label="Média dos 3 últimos meses" value={money(r.avg_3m_cents)} hint="meses completos" />
+        <Kpi
+          label="Média de 12 meses"
+          value={money(r.avg_12m_cents)}
+          hint={r.avg_12m_cents ? `3 meses ${pct(((r.avg_3m_cents - r.avg_12m_cents) / r.avg_12m_cents) * 100, 0)} contra 12 meses` : undefined}
+        />
+        <Kpi
+          label="Cobertura dos gastos"
+          value={c ? pct(c.pct, 0, false) : 'a coletar'}
+          hint={c ? `gasto líquido médio de ${money(c.expense_avg_cents)} · ${range(c.months)}` : 'faltam gastos registrados nos 3 últimos meses'}
+        />
+      </div>
+      <StackedColumns months={r.months} series={r.series} partialLast legendValue={(s) => `${money(r.series.find((x) => x.key === s.key)?.total_12m_cents ?? 0)} em 12 m`} />
     </div>
   );
 }

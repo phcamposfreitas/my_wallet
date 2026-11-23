@@ -197,3 +197,11 @@ button.expander:hover { color: var(--accent); }
 .md table { display: block; overflow-x: auto; margin: 10px 0; font-size: 13px; }
 .md th, .md td { white-space: normal; min-width: 80px; vertical-align: top; }
 .md code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* Colunas empilhadas (renda por tese) */
+.cols-chart.stacked { gap: 3px; }
+.cols-chart.stacked .col { justify-content: flex-end; }
+.stack-bar { width: 100%; max-width: 36px; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; min-height: 1px; }
+.stack-bar > div { min-height: 1px; }
+td.flag-corte { color: var(--neg); font-weight: 600; }
+td.flag-sem { color: var(--neg); }
