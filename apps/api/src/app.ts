@@ -7,11 +7,15 @@ import { statementRoutes } from './routes/statements.ts';
 import { ruleRoutes } from './routes/rules.ts';
 import { planRoutes } from './routes/plan.ts';
 import { marketRoutes } from './routes/market.ts';
+import { thesisRoutes } from './routes/theses.ts';
 import { buildPortfolio } from './snapshots.ts';
 import type { FetchFn } from './importers/sgs.ts';
 
-/** `fetch` substitui o acesso à rede nas importações de séries (usado nos testes). */
-export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn } = {}) {
+/**
+ * `fetch` substitui o acesso à rede nas importações de séries (usado nos testes).
+ * `researchDir` é a pasta `research/` da pasta de dados, de onde saem as teses.
+ */
+export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn; researchDir?: string } = {}) {
   // bodyLimit maior: uma fatura extraída pode ter centenas de lançamentos.
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
 
@@ -40,6 +44,7 @@ export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn } = {
       ruleRoutes(api, db);
       planRoutes(api, db);
       marketRoutes(api, db, { fetch: opts.fetch });
+      thesisRoutes(api, db, { researchDir: opts.researchDir });
 
       // Visão geral: saldo das contas do dia a dia que entram no patrimônio + corretora (último snapshot)
       api.get('/overview', async () => {
