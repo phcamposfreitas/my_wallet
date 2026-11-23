@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.ts';
 import { idParam } from '../crud.ts';
-import { buildTheses, thesisDetail } from '../theses.ts';
+import { buildTheses, thesesIncome, thesisDetail } from '../theses.ts';
+import { yearSummary } from './budget.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve ser YYYY-MM-DD');
 
@@ -29,6 +30,20 @@ export function thesisRoutes(app: FastifyInstance, db: DB, opts: { researchDir?:
   const dir = opts.researchDir ? `${opts.researchDir}/teses` : undefined;
 
   app.get('/theses', async () => buildTheses(db, dir));
+  // Renda mensal por tese. Registrada antes de /theses/:id para "income" não ser lido como id.
+  app.get('/theses/income', async (req) => {
+    const q = z.object({ months: z.coerce.number().int().min(3).max(60).default(24) }).parse(req.query);
+    // Gasto líquido do mês (gastos − receitas − reembolsos da casa), para a cobertura.
+    const years = new Map<number, ReturnType<typeof yearSummary>>();
+    const netExpense = (month: string) => {
+      const y = Number(month.slice(0, 4));
+      if (!years.has(y)) years.set(y, yearSummary(db, y));
+      const m = years.get(y)!.months[Number(month.slice(5, 7)) - 1];
+      return m.expense_cents ? m.expense_cents - m.income_cents - (m.reimbursement_cents ?? 0) : null;
+    };
+    return thesesIncome(db, dir, q.months, netExpense);
+  });
+
   app.get('/theses/:id', async (req, reply) => {
     const { id } = z.object({ id: z.string().regex(/^[\w-]+$/) }).parse(req.params);
     return thesisDetail(db, dir, id) ?? reply.code(404).send({ error: 'Tese não encontrada' });

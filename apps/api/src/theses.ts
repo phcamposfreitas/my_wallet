@@ -150,5 +150,182 @@ export function thesisDetail(db: DB, dir: string | undefined, id: string) {
   if (!file) return null;
   const all = buildTheses(db, dir);
   const summary = all.theses.find((t) => t.id === file.id)!;
-  return { ...summary, body: file.body, as_of: all.as_of, total_cents: all.total_cents };
+  const income = thesisIncome(db, file.tickers, summary.assets);
+  return { ...summary, body: file.body, as_of: all.as_of, total_cents: all.total_cents, income };
+}
+
+// --- Renda (proventos) por tese e por ativo ----------------------------------------------
+
+const ymKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+/** Os `n` meses que terminam em `last` (YYYY-MM), do mais antigo ao mais novo. */
+function monthsEndingAt(last: string, n: number): string[] {
+  const [y, m] = last.split('-').map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 - (n - 1 - i), 1);
+    return ymKey(d.getFullYear(), d.getMonth() + 1);
+  });
+}
+const avg = (v: number[]) => (v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : 0);
+
+interface IncomeRow {
+  asset_id: number;
+  ticker: string;
+  asset_class: string;
+  date: string;
+  type: string;
+  amount_cents: number;
+  base_quantity: number | null;
+  value_per_unit: number | null;
+}
+
+/** Proventos do período. Amortização é devolução de capital, não renda. */
+function incomeRows(db: DB, from: string): IncomeRow[] {
+  return db
+    .prepare(
+      `SELECT i.asset_id, a.ticker, a.asset_class, i.date, i.type, i.amount_cents, i.base_quantity, i.value_per_unit
+       FROM asset_income i JOIN assets a ON a.id = i.asset_id
+       WHERE i.type <> 'amortizacao' AND i.date >= ? ORDER BY i.date`,
+    )
+    .all(from) as unknown as IncomeRow[];
+}
+
+/**
+ * Janela de meses da renda. O último mês é o do último provento registrado e pode estar
+ * incompleto: as médias usam só os meses anteriores a ele.
+ */
+function incomeWindow(db: DB, n: number) {
+  const until = (db.prepare("SELECT MAX(date) AS d FROM asset_income WHERE type <> 'amortizacao'").get() as { d: string | null }).d;
+  if (!until) return null;
+  const months = monthsEndingAt(until.slice(0, 7), n);
+  return { until, months, complete: months.slice(0, -1) };
+}
+
+/**
+ * Renda mensal empilhada por tese. Ativo que saiu da carteira entra em "Ex-posições": a renda
+ * dele existiu, mas não se repete. A cobertura compara a média dos três últimos meses
+ * completos com o gasto líquido dos mesmos meses.
+ */
+export function thesesIncome(db: DB, dir: string | undefined, n = 24, netExpenseOf?: (month: string) => number | null) {
+  const win = incomeWindow(db, n);
+  const files = readTheses(dir);
+  if (!win) return { months: [], income_until: null, series: [], total_monthly: [], avg_3m_cents: 0, avg_12m_cents: 0, coverage: null };
+
+  const held = new Set(buildPortfolio(db).positions.map((p) => p.ticker));
+  const thesisOf = new Map<string, string>();
+  for (const f of files) for (const t of f.tickers) if (!thesisOf.has(t)) thesisOf.set(t, f.id);
+
+  const idx = new Map(win.months.map((m, i) => [m, i]));
+  const series = new Map<string, { key: string; label: string; monthly: number[] }>();
+  const get = (key: string, label: string) => {
+    if (!series.has(key)) series.set(key, { key, label, monthly: Array(n).fill(0) });
+    return series.get(key)!;
+  };
+  for (const f of files) get(f.id, f.title);
+  for (const r of incomeRows(db, `${win.months[0]}-01`)) {
+    const i = idx.get(r.date.slice(0, 7));
+    if (i === undefined) continue;
+    const thesis = held.has(r.ticker) ? thesisOf.get(r.ticker) : undefined;
+    const s = thesis ? series.get(thesis)! : held.has(r.ticker) ? get('_sem', 'Sem tese') : get('_ex', 'Ex-posições');
+    s.monthly[i] += r.amount_cents;
+  }
+
+  const list = [...series.values()].filter((s) => s.monthly.some((v) => v !== 0));
+  const total = win.months.map((_, i) => list.reduce((s, x) => s + x.monthly[i], 0));
+  const completeTotals = total.slice(0, -1);
+  const last3 = win.complete.slice(-3);
+  const avg3 = avg(completeTotals.slice(-3));
+
+  let coverage = null;
+  if (netExpenseOf && last3.length) {
+    const expenses = last3.map(netExpenseOf);
+    if (expenses.every((e): e is number => e !== null && e > 0)) {
+      const expenseAvg = avg(expenses);
+      coverage = { months: last3, income_avg_cents: avg3, expense_avg_cents: expenseAvg, pct: pct(avg3, expenseAvg) };
+    }
+  }
+
+  return {
+    months: win.months,
+    income_until: win.until,
+    series: list.map((s) => ({ ...s, total_12m_cents: s.monthly.slice(-13, -1).reduce((a, b) => a + b, 0) })),
+    total_monthly: total,
+    avg_3m_cents: avg3,
+    avg_12m_cents: avg(completeTotals.slice(-12)),
+    coverage,
+  };
+}
+
+/** Classes que pagam todo mês: só nelas faz sentido apontar corte e mês sem pagamento. */
+const MONTHLY_PAYERS = new Set(['fii', 'fundo']);
+const CUT_THRESHOLD = 0.9; // queda de mais de 10% no valor por cota
+
+/**
+ * Renda de uma tese, ativo a ativo: valor recebido e valor por cota em cada mês.
+ * Valor por cota do mês: em cada data e tipo vale a linha de maior quantidade-base (as outras
+ * costumam ser recibos de subscrição, pagos pro rata); datas e tipos diferentes somam.
+ */
+export function thesisIncome(db: DB, tickers: string[], positions: { ticker: string; value_cents: number; cost_cents: number | null }[], n = 12) {
+  const win = incomeWindow(db, n);
+  if (!win) return null;
+  const idx = new Map(win.months.map((m, i) => [m, i]));
+  const wanted = new Set(tickers);
+  const rows = incomeRows(db, `${win.months[0]}-01`).filter((r) => wanted.has(r.ticker));
+  const lastIdx = n - 1;
+
+  const assets = positions
+    .filter((p) => wanted.has(p.ticker))
+    .map((p) => {
+      const mine = rows.filter((r) => r.ticker === p.ticker);
+      const monthly = Array(n).fill(0) as number[];
+      const best = new Map<string, { i: number; qty: number; vpu: number }>(); // por data+tipo
+      for (const r of mine) {
+        const i = idx.get(r.date.slice(0, 7));
+        if (i === undefined) continue;
+        monthly[i] += r.amount_cents;
+        if (r.value_per_unit === null) continue;
+        const k = `${r.date}|${r.type}`;
+        const cur = best.get(k);
+        if (!cur || (r.base_quantity ?? 0) > cur.qty) best.set(k, { i, qty: r.base_quantity ?? 0, vpu: r.value_per_unit });
+      }
+      const perUnit = Array(n).fill(null) as (number | null)[];
+      for (const b of best.values()) perUnit[b.i] = (perUnit[b.i] ?? 0) + b.vpu;
+
+      // Sinais só para quem paga todo mês. O último mês pode estar incompleto: ausência nele não conta.
+      const flags = Array(n).fill(null) as ('corte' | 'sem_pagamento' | null)[];
+      const assetClass = mine[0]?.asset_class;
+      if (assetClass && MONTHLY_PAYERS.has(assetClass)) {
+        let prev: number | null = null;
+        for (let i = 0; i < n; i++) {
+          const v = perUnit[i];
+          if (v === null) {
+            if (prev !== null && i < lastIdx && monthly[i] === 0) flags[i] = 'sem_pagamento';
+            continue;
+          }
+          if (prev !== null && v < prev * CUT_THRESHOLD) flags[i] = 'corte';
+          prev = v;
+        }
+      }
+      const total12 = monthly.reduce((s, v) => s + v, 0);
+      return {
+        ticker: p.ticker,
+        monthly,
+        per_unit: perUnit,
+        flags,
+        total_cents: total12,
+        yield_on_price_pct: pct(total12, p.value_cents),
+        yield_on_cost_pct: p.cost_cents ? pct(total12, p.cost_cents) : null,
+      };
+    });
+
+  const total = win.months.map((_, i) => assets.reduce((s, a) => s + a.monthly[i], 0));
+  return {
+    months: win.months,
+    income_until: win.until,
+    assets,
+    total_monthly: total,
+    avg_3m_cents: avg(total.slice(0, -1).slice(-3)),
+    signals: assets.flatMap((a) =>
+      a.flags.flatMap((f, i) => (f ? [{ ticker: a.ticker, month: win.months[i], kind: f, per_unit: a.per_unit[i] }] : [])),
+    ),
+  };
 }
