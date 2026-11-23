@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import Markdown from 'react-markdown';
@@ -37,7 +38,7 @@ export default function PolicyTab() {
       </div>
     );
   }
-  const { policy, allocation = [], limits = [], factors = [], blocked = [], tail, reserve, tolerance } = data;
+  const { policy, allocation = [], limits = [], factors = [], blocked = [], room = [], tail, reserve, tolerance } = data;
   const dd = tolerance?.drawdown;
   const allocScale = Math.max(60, ...allocation.map((a) => Math.max(a.current_pct, (a.target_pct ?? 0) + (a.band_pct ?? 0)))) * 1.05;
   const outOfBand = allocation.filter((a) => a.status === 'acima' || a.status === 'abaixo').length;
@@ -104,6 +105,8 @@ export default function PolicyTab() {
           </table>
         </div>
       </div>
+
+      <RoomCard room={room} allocation={allocation} monthly={policy.monthly_contribution_cents} />
 
       <div className="card">
         <h2 style={{ marginBottom: 4 }}>Limites</h2>
@@ -242,5 +245,101 @@ export default function PolicyTab() {
         </div>
       </div>
     </div>
+  );
+}
+
+type Room = NonNullable<PolicyView['room']>;
+
+/**
+ * Onde a política deixa espaço para aporte: teses que não estão em revisão, com a folga até o
+ * teto mais apertado. Mostra o que as regras permitem; não diz onde aportar.
+ */
+function RoomCard({ room, allocation, monthly }: { room: Room; allocation: NonNullable<PolicyView['allocation']>; monthly: number | null }) {
+  const [all, setAll] = useState(false);
+  const below = allocation.filter((a) => a.status === 'abaixo');
+  const shown = all || !below.length ? room : room.filter((r) => r.group_status === 'abaixo');
+  const hidden = room.length - shown.length;
+  // Folga somada dos ativos já em carteira, nas teses exibidas.
+  const existing = shown.reduce((s, r) => s + r.assets.reduce((x, a) => x + (a.room_cents ?? 0), 0), 0);
+  const months = (cents: number | null) => (monthly && cents !== null ? ` · ${(cents / monthly).toFixed(1).replace('.', ',')} meses de aporte` : '');
+
+  return (
+    <div className="card">
+      <div className="page-head" style={{ marginBottom: 8 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Onde cabe aporte novo</h2>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            O que as regras permitem hoje, não uma indicação de onde aportar. Ficam de fora as teses em revisão e os ativos acima de um teto.
+            {below.length > 0 && (
+              <> Abaixo do alvo: {below.map((a) => `${a.label} (falta ${money(a.to_target_cents)})`).join(', ')}.</>
+            )}
+            {monthly ? <> Aporte assumido: {money(monthly)} por mês.</> : null}
+          </p>
+        </div>
+        {below.length > 0 && hidden + (all ? 1 : 0) > 0 && (
+          <button onClick={() => setAll(!all)}>{all ? 'Só classes abaixo do alvo' : `Mostrar todas as classes (+${hidden})`}</button>
+        )}
+      </div>
+      {!shown.length ? (
+        <div className="empty">Nenhuma tese com espaço nas classes abaixo do alvo.</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tese e ativo</th>
+                <th>Classe</th>
+                <th className="num">Peso hoje</th>
+                <th className="num">Espaço</th>
+                <th className="num">Em reais</th>
+                <th>Quem limita</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <FragmentRows key={r.id} r={r} months={months} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {shown.length > 0 && (
+        <p className="small muted" style={{ margin: '10px 0 0' }}>
+          Nos ativos já em carteira dessas teses cabem {money(existing)}{months(existing)}. O espaço de uma tese além disso depende de fundos ou ativos
+          novos que atendam aos critérios dela. Os valores em reais são de dinheiro novo: o aporte também aumenta a carteira, por isso cabe mais do que a diferença em pontos sugere.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FragmentRows({ r, months }: { r: Room[number]; months: (c: number | null) => string }) {
+  return (
+    <>
+      <tr>
+        <td style={{ whiteSpace: 'normal', minWidth: 240 }}>
+          <Link to={`/carteira/teses/${r.id}`}><strong>{r.id}</strong> {r.title}</Link>
+          {r.blocked_assets.length > 0 && <div className="small muted">sem aporte: {r.blocked_assets.join(', ')}</div>}
+          {!r.assets.length && !r.blocked_assets.length && <div className="small muted">nenhum ativo escolhido ainda</div>}
+        </td>
+        <td>
+          {r.group_label} <StatusTag status={r.group_status} />
+        </td>
+        <td className="num">{p1(r.current_pct)}</td>
+        <td className="num">{r.room_pct === null ? 'sem teto' : `${p1(r.room_pct).replace('%', '')} p.p.`}</td>
+        <td className="num" title={months(r.room_cents).replace(' · ', '')}>{money(r.room_cents)}</td>
+        <td className="small muted">{r.limited_by ?? '—'}</td>
+      </tr>
+      {r.assets.map((a) => (
+        <tr key={a.ticker} className="sub">
+          <td style={{ paddingLeft: 28 }}>{a.ticker}</td>
+          <td />
+          <td className="num">{p1(a.current_pct)}</td>
+          <td className="num">{a.room_pct === null ? 'sem teto' : `${p1(a.room_pct).replace('%', '')} p.p.`}</td>
+          <td className="num" title={months(a.room_cents).replace(' · ', '')}>{money(a.room_cents)}</td>
+          <td className="small muted">{a.limited_by ?? '—'}</td>
+        </tr>
+      ))}
+    </>
   );
 }

@@ -61,6 +61,8 @@ export function readPolicy(researchDir: string | undefined) {
     targets: pairs(meta.alvos),
     caps: Object.fromEntries(Object.entries(pairs(meta.tetos)).map(([k, v]) => [k, v[0]])),
     tolerance: Object.fromEntries(Object.entries(pairs(meta.tolerancia)).map(([k, v]) => [k, v[0]])),
+    /** Aporte mensal assumido, em reais (campo `aporte_mensal`). */
+    monthly_contribution_cents: Number.isFinite(Number(str('aporte_mensal'))) && str('aporte_mensal') ? Math.round(Number(str('aporte_mensal')) * 100) : null,
     state_owned: list(meta.estatais),
     credit_theses: list(meta.teses_credito_privado),
     reserve: list(meta.reserva_emergencia),
@@ -233,6 +235,70 @@ export function buildPolicy(db: DB, researchDir: string | undefined) {
     .filter((b) => b.reasons.length)
     .sort((a, b) => b.current_pct - a.current_pct);
 
+  // --- Onde cabe aporte novo: o que não está vedado, até o teto mais apertado que se aplica
+  const OWNER_GROUP: Record<string, string> = { 'analista-fii': 'fiis', 'analista-acoes': 'acoes', 'estrategista-macro': 'tesouro' };
+  const allocOf = new Map(allocation.map((a) => [a.key, a]));
+  const blockedSet = new Set(blocked.map((b) => b.ticker));
+  const weightOfThesis = new Map(byThesis.map((t) => [t.name, t.current_pct]));
+  /**
+   * Um teto, com o peso atual do que ele mede. O espaço em reais é de dinheiro NOVO: o aporte
+   * também aumenta a carteira, então cabe (teto × total − valor) ÷ (1 − teto), mais do que a
+   * simples diferença de pontos sugere (faz muita diferença nos tetos altos, como o de fator).
+   */
+  type Limit = { label: string; room_pct: number; room_cents: number };
+  const limit = (label: string, capPct: number | null, currentPct: number): Limit | null =>
+    capPct === null
+      ? null
+      : { label, room_pct: capPct - currentPct, room_cents: Math.round((((capPct - currentPct) / 100) * total) / (1 - capPct / 100)) };
+  /** O teto mais apertado em reais entre os que se aplicam. */
+  const tightest = (ls: (Limit | null)[]) => ls.filter((l): l is Limit => l !== null).sort((x, y) => x.room_cents - y.room_cents)[0] ?? null;
+  const currentOf = (key: string) => limits.find((l) => l.key === key)!.current_pct;
+
+  const room = theses
+    .filter((t) => !reviewing.has(t.id))
+    .map((t) => {
+      const mine = positions.filter((p) => thesisOf.get(p.ticker) === t.id);
+      const group = mine.length ? (CLASS_GROUP[mine[0].asset_class] ?? 'outros') : (OWNER_GROUP[t.owner ?? ''] ?? 'outros');
+      // Tese sem posição ainda não tem fator: conta como doméstico, que é o caso geral.
+      const domestic = mine.length ? mine.some((p) => factorOf(p.ticker) === 'domestico') : true;
+      const thesisLimits = [
+        limit('teto por tese', cap('tese'), weightOfThesis.get(t.id) ?? 0),
+        credit.has(t.id) ? limit('teto de crédito privado', cap('credito_privado'), currentOf('credito_privado')) : null,
+      ];
+      const domesticLimit = limit('teto do fator doméstico', cap('fator_domestico'), currentOf('fator_domestico'));
+      const thesisLimit = tightest([...thesisLimits, domestic ? domesticLimit : null]);
+      const assets = mine
+        .filter((p) => !blockedSet.has(p.ticker))
+        .map((p) => {
+          const w = weight(p.value_cents);
+          const own = STOCK_CLASSES.has(p.asset_class)
+            ? limit('teto por ação', cap('acao'), w)
+            : FUND_CLASSES.has(p.asset_class)
+              ? limit('teto por fundo', cap('fundo'), w)
+              : null;
+          const lim = tightest([own, ...thesisLimits, factorOf(p.ticker) === 'domestico' ? domesticLimit : null]);
+          return { ticker: p.ticker, current_pct: w, room_pct: lim?.room_pct ?? null, room_cents: lim?.room_cents ?? null, limited_by: lim?.label ?? null };
+        })
+        .filter((a) => a.room_cents === null || a.room_cents > 0)
+        .sort((a, b) => (b.room_cents ?? 1e15) - (a.room_cents ?? 1e15));
+      return {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        group,
+        group_label: GROUP_LABEL[group] ?? group,
+        group_status: allocOf.get(group)?.status ?? ('sem_regra' as Status),
+        current_pct: weightOfThesis.get(t.id) ?? 0,
+        room_pct: thesisLimit?.room_pct ?? null,
+        room_cents: thesisLimit?.room_cents ?? null,
+        limited_by: thesisLimit?.label ?? null,
+        assets,
+        // Posições da tese que não podem receber aporte (acima de um teto por ativo).
+        blocked_assets: mine.filter((p) => blockedSet.has(p.ticker)).map((p) => p.ticker),
+      };
+    })
+    .filter((t) => t.room_cents === null || t.room_cents > 0);
+
   // --- Cauda: posições abaixo de 1%
   const small = positions.filter((p) => weight(p.value_cents) < 1);
   const tail = {
@@ -258,6 +324,7 @@ export function buildPolicy(db: DB, researchDir: string | undefined) {
     limits,
     factors,
     blocked,
+    room,
     tail,
     reserve: { value_cents: reserveValue, current_pct: weight(reserveValue), tickers: policy.reserve },
     tolerance: { ...policy.tolerance, drawdown: dd, action },
