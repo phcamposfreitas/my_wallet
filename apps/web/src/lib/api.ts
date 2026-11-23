@@ -319,3 +319,76 @@ export interface PlanSuggestion {
   months: number[];
   evidence: string;
 }
+
+export interface ThesisAsset {
+  asset_id: number;
+  ticker: string;
+  name: string | null;
+  asset_class: string;
+  value_cents: number;
+  cost_cents: number | null;
+  weight_pct: number | null;
+  price_return_pct: number | null;
+  income_12m_cents: number;
+  income_total_cents: number;
+  pays_cash: number;
+}
+
+export interface ThesisGroup {
+  assets: ThesisAsset[];
+  value_cents: number;
+  cost_cents: number;
+  weight_pct: number | null;
+  price_return_pct: number | null;
+  income_12m_cents: number;
+  income_total_cents: number;
+}
+
+export interface Thesis extends ThesisGroup {
+  id: string;
+  title: string;
+  status: string;
+  owner: string | null;
+  created_on: string | null;
+  last_review: string | null;
+  next_review: string | null;
+  origin: string | null;
+  file: string;
+  tickers_without_position: string[];
+}
+
+export interface ThesesAsOf {
+  snapshot: string | null;
+  income_until: string | null;
+  income_12m_from: string | null;
+}
+
+export interface Theses {
+  available: boolean;
+  as_of: ThesesAsOf;
+  total_cents: number;
+  theses: Thesis[];
+  unassigned: ThesisGroup;
+  duplicated: { ticker: string; theses: string[] }[];
+}
+
+export interface ThesisDetail extends Thesis {
+  body: string;
+  as_of: ThesesAsOf;
+  total_cents: number;
+}
+
+export interface ActionItem {
+  id: number;
+  due_date: string;
+  title: string;
+  detail: string | null;
+  kind: 'acao' | 'info';
+  thesis_id: string | null;
+  asset_id: number | null;
+  ticker: string | null;
+  source: string | null;
+  status: 'aberto' | 'feito' | 'descartado';
+  resolved_at: string | null;
+  resolution_note: string | null;
+}

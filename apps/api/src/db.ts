@@ -296,6 +296,24 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `,
+  // v11: prazos do titular (ações com data-limite e eventos informativos da carteira)
+  `
+  CREATE TABLE action_items (
+    id INTEGER PRIMARY KEY,
+    due_date TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT,                           -- o que fazer, por onde, e o que acontece se não fizer
+    kind TEXT NOT NULL DEFAULT 'acao' CHECK (kind IN ('acao','info')),
+    thesis_id TEXT,                        -- id da tese no markdown (ex.: 'T4'); as teses não ficam no banco
+    asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL,
+    source TEXT,
+    status TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','feito','descartado')),
+    resolved_at TEXT,
+    resolution_note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_action_items_open ON action_items(status, due_date);
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [

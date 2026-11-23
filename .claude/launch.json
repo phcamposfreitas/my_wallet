@@ -15,9 +15,9 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "WALLET_DB=\"$PWD/data/dev-copia.db\" exec npm run dev"
+        "WALLET_DB=\"$PWD/data/dev-copia.db\" API_PORT=3334 WEB_PORT=5174 exec npm run dev"
       ],
-      "port": 5173
+      "port": 5174
     }
   ]
 }

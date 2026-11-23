@@ -168,3 +168,32 @@ button:disabled { opacity: .6; cursor: default; }
 .heat th.month, .heat td.cell { min-width: 64px; }
 .stack-col { display: flex; flex-direction: column-reverse; width: 100%; max-width: 36px; border-radius: 4px 4px 0 0; overflow: hidden; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+/* Prazos do titular */
+.deadlines ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.deadline { display: flex; gap: 14px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; border-left: 4px solid var(--border); background: var(--surface-2); }
+.deadline.soon { border-left-color: var(--warn); }
+.deadline.late { border-left-color: var(--neg); }
+.deadline.late .deadline-when { color: var(--neg); }
+.deadline.soon .deadline-when .small { color: var(--warn); }
+.deadline-when { display: flex; flex-direction: column; min-width: 110px; }
+.deadline-what { flex: 1; min-width: 0; }
+.deadline-actions { display: flex; gap: 4px; align-items: center; }
+.deadline-group { margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+@media (max-width: 640px) { .deadline { flex-wrap: wrap; } }
+
+/* Tabela por tese */
+tr.sub td { font-size: 13px; background: var(--surface-2); }
+button.expander { padding: 2px 6px; margin-right: 6px; width: 24px; }
+button.expander:hover { color: var(--accent); }
+
+/* Texto das teses (markdown) */
+.md { line-height: 1.55; overflow-wrap: anywhere; }
+.md h2 { font-size: 17px; margin: 22px 0 8px; }
+.md h3 { font-size: 15px; margin: 16px 0 6px; }
+.md h2:first-child { margin-top: 0; }
+.md ul, .md ol { padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md table { display: block; overflow-x: auto; margin: 10px 0; font-size: 13px; }
+.md th, .md td { white-space: normal; min-width: 80px; vertical-align: top; }
+.md code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }

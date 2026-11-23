@@ -1,3 +1,4 @@
+import Deadlines from '../components/Deadlines';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api, type MonthSummary, type Overview, type Portfolio } from '../lib/api';
@@ -23,6 +24,8 @@ export default function Dashboard() {
         Visão consolidada · gastos de {monthLabel(month).toLowerCase()}
         {o.last_snapshot && <> · carteira em {date(o.last_snapshot)}</>}
       </p>
+
+      <div style={{ marginBottom: 16 }}><Deadlines compact /></div>
 
       <div className="grid kpis">
         <Kpi label="Patrimônio" value={money(o.net_worth_cents)} hint="Contas + corretora" />
