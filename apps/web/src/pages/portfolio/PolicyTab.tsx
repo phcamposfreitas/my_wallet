@@ -215,12 +215,17 @@ export default function PolicyTab() {
               <>
                 <p style={{ margin: '0 0 4px' }}>
                   <strong>Queda em {dd?.window_days ?? 90} dias:</strong>{' '}
-                  {dd ? <>{pct(dd.pct, 1)} desde a coleta de {date(dd.peak_at)}</> : 'a coletar'}
+                  {dd ? <>{pct(dd.pct, 1)} desde o pico de {date(dd.peak_at)}</> : 'a coletar'}
                   {tolerance.action && <> · <strong>{ACTION_TEXT[tolerance.action]}</strong></>}
                 </p>
                 <p className="small muted" style={{ margin: 0 }}>
                   Regra: até {tolerance.nada}% nada; até {tolerance.rebalancear}% rebalancear; além disso, reduzir risco só com tese invalidada.
-                  {dd && <> Medida em {dd.snapshots} coletas, sem cotação diária: a queda real de pico a vale é maior.</>}
+                  {dd &&
+                    (dd.source === 'cotacoes' ? (
+                      <> Medida pelo fechamento diário da B3 até {date(dd.as_of)}; Tesouro e fundos não listados só andam nas datas de coleta.</>
+                    ) : (
+                      <> Medida em {dd.points} coletas, sem cotação diária: a queda real de pico a vale é maior.</>
+                    ))}
                 </p>
               </>
             )}

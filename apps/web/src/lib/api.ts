@@ -459,7 +459,43 @@ export interface PolicyView {
   tolerance?: {
     nada?: number;
     rebalancear?: number;
-    drawdown: { pct: number; peak_at: string; snapshots: number; window_days: number } | null;
+    drawdown: { pct: number; peak_at: string; as_of: string; source: 'cotacoes' | 'coletas'; points: number; window_days: number } | null;
     action: 'nada' | 'rebalancear' | 'reduzir_risco' | null;
+  };
+}
+
+export interface Performance {
+  available: boolean;
+  reason?: string;
+  from: string;
+  to: string;
+  snapshots: string[];
+  dates: string[];
+  series: Record<'price' | 'total' | 'cdi' | 'ibovespa' | 'ifix', (number | null)[]>;
+  summary: {
+    price_pct: number | null;
+    total_pct: number | null;
+    cdi_pct: number | null;
+    ibovespa_pct: number | null;
+    ifix_pct: number | null;
+    max_drawdown: { pct: number; peak_date: string; trough_date: string };
+    unpriced_pct: number;
+  };
+  last_session: {
+    date: string;
+    previous: string;
+    week_from: string;
+    change_cents: number;
+    change_pct: number | null;
+    assets: {
+      ticker: string;
+      thesis: string | null;
+      price_cents: number;
+      value_cents: number;
+      day_pct: number | null;
+      week_pct: number | null;
+      day_change_cents: number;
+    }[];
+    without_quote: string[];
   };
 }

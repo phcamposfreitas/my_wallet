@@ -5,6 +5,7 @@ import { idParam } from '../crud.ts';
 import { buildTheses, thesesIncome, thesisDetail } from '../theses.ts';
 import { yearSummary } from './budget.ts';
 import { buildPolicy } from '../policy.ts';
+import { buildPerformance } from '../performance.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve ser YYYY-MM-DD');
 
@@ -34,6 +35,12 @@ export function thesisRoutes(app: FastifyInstance, db: DB, opts: { researchDir?:
 
   // Política de investimentos comparada com a última coleta.
   app.get('/policy', async () => buildPolicy(db, opts.researchDir));
+
+  // Desempenho diário contra CDI, Ibovespa e IFIX, e a variação do último pregão.
+  app.get('/performance', async (req) => {
+    const q = z.object({ from: date.optional() }).parse(req.query);
+    return buildPerformance(db, { from: q.from, researchDir: opts.researchDir });
+  });
   // Renda mensal por tese. Registrada antes de /theses/:id para "income" não ser lido como id.
   app.get('/theses/income', async (req) => {
     const q = z.object({ months: z.coerce.number().int().min(3).max(60).default(24) }).parse(req.query);

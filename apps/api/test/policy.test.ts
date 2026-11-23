@@ -99,6 +99,7 @@ describe('política de investimentos', () => {
 
     expect(p.reserve).toMatchObject({ value_cents: 200_000, current_pct: 20 });
     expect(p.tolerance.drawdown.pct).toBeCloseTo(-20);
+    expect(p.tolerance.drawdown).toMatchObject({ source: 'coletas', points: 2 }); // sem cotações importadas
     expect(p.tolerance.drawdown.peak_at.slice(0, 10)).toBe('2026-10-05');
     expect(p.tolerance.action).toBe('rebalancear'); // entre −15% e −25%
     expect(p.tail).toMatchObject({ count: 0 });
