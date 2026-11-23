@@ -420,3 +420,46 @@ export interface ThesisIncome {
   avg_3m_cents: number;
   signals: { ticker: string; month: string; kind: 'corte' | 'sem_pagamento'; per_unit: number | null }[];
 }
+
+export type PolicyStatus = 'dentro' | 'acima' | 'abaixo' | 'sem_regra';
+
+export interface PolicyView {
+  available: boolean;
+  as_of: { snapshot: string | null };
+  total_cents: number;
+  policy?: { status: string; approved: boolean; approved_on: string | null; next_review: string | null };
+  body?: string;
+  allocation?: {
+    key: string;
+    label: string;
+    value_cents: number;
+    current_pct: number;
+    target_pct: number | null;
+    band_pct: number | null;
+    deviation_pct: number | null;
+    to_target_cents: number | null;
+    status: PolicyStatus;
+  }[];
+  limits?: {
+    key: string;
+    label: string;
+    scope: 'cada' | 'soma';
+    cap_pct: number | null;
+    current_pct: number;
+    headroom_pct: number | null;
+    status: PolicyStatus;
+    over: { name: string; current_pct: number }[];
+    members: string[];
+    note: string | null;
+  }[];
+  factors?: { key: string; label: string; value_cents: number; current_pct: number; count: number }[];
+  blocked?: { ticker: string; thesis: string | null; current_pct: number; reasons: string[] }[];
+  tail?: { count: number; current_pct: number; without_thesis: string[] };
+  reserve?: { value_cents: number; current_pct: number; tickers: string[] };
+  tolerance?: {
+    nada?: number;
+    rebalancear?: number;
+    drawdown: { pct: number; peak_at: string; snapshots: number; window_days: number } | null;
+    action: 'nada' | 'rebalancear' | 'reduzir_risco' | null;
+  };
+}
