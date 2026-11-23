@@ -214,3 +214,10 @@ td.flag-sem { color: var(--neg); }
 .gauge-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
 .badge.ok { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); border-color: transparent; }
 .badge.bad { background: color-mix(in srgb, var(--neg) 16%, transparent); color: var(--neg); border-color: transparent; }
+
+/* Gráfico de linhas (desempenho) */
+.line-chart { width: 100%; height: auto; display: block; }
+.line-chart .axis-grid { stroke: var(--border); stroke-width: 1; }
+.line-chart .axis-zero { stroke: var(--muted); stroke-width: 1; }
+.line-chart .axis-mark { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; opacity: .7; }
+.line-chart .axis-label { fill: var(--muted); font-size: 11px; }

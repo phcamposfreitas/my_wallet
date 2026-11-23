@@ -7,6 +7,7 @@ import ImportTab from './portfolio/ImportTab';
 import ThesesTab from './portfolio/ThesesTab';
 import ThesisPage from './portfolio/ThesisPage';
 import PolicyTab from './portfolio/PolicyTab';
+import PerformanceTab from './portfolio/PerformanceTab';
 
 export default function Portfolio() {
   return (
@@ -19,6 +20,7 @@ export default function Portfolio() {
         </NavLink>
         <NavLink to="/carteira/teses">Teses</NavLink>
         <NavLink to="/carteira/politica">Política</NavLink>
+        <NavLink to="/carteira/desempenho">Desempenho</NavLink>
         <NavLink to="/carteira/mudancas">Mudanças entre coletas</NavLink>
         <NavLink to="/carteira/proventos">Proventos</NavLink>
         <NavLink to="/carteira/operacoes">Operações</NavLink>
@@ -29,6 +31,7 @@ export default function Portfolio() {
         <Route path="teses" element={<ThesesTab />} />
         <Route path="teses/:id" element={<ThesisPage />} />
         <Route path="politica" element={<PolicyTab />} />
+        <Route path="desempenho" element={<PerformanceTab />} />
         <Route path="mudancas" element={<ChangesTab />} />
         <Route path="proventos" element={<IncomeTab />} />
         <Route path="operacoes" element={<TradesTab />} />

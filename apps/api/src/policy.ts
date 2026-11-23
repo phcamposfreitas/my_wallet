@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DB } from './db.ts';
+import { buildPerformance } from './performance.ts';
 import { buildPortfolio, compareSnapshots, listSnapshots } from './snapshots.ts';
 import { parseFrontMatter, readTheses } from './theses.ts';
 
@@ -71,11 +72,31 @@ export function readPolicy(researchDir: string | undefined) {
 
 type Status = 'dentro' | 'acima' | 'abaixo' | 'sem_regra';
 
-/** Queda de mercado (fluxos descontados) desde a coleta de pico dos últimos 90 dias. */
+/**
+ * Queda de mercado desde o pico dos últimos 90 dias. Com cotações importadas usa a série
+ * diária (o pico e o vale verdadeiros); sem elas, compara só as coletas e subestima a queda.
+ */
 function drawdown(db: DB) {
   const all = listSnapshots(db); // mais recente primeiro
-  if (all.length < 2) return null;
+  if (!all.length) return null;
   const last = all[0];
+  const since0 = new Date(Date.parse(last.taken_at.slice(0, 10)) - TOLERANCE_WINDOW_DAYS * DAY).toISOString().slice(0, 10);
+  const daily = buildPerformance(db, { from: since0 });
+  if (daily.available && daily.dates.length > 1) {
+    const prices = daily.series.price as number[];
+    let peak = 0;
+    prices.forEach((v, i) => (v > prices[peak] ? (peak = i) : 0));
+    const now = prices[prices.length - 1];
+    return {
+      pct: ((100 + now) / (100 + prices[peak]) - 1) * 100,
+      peak_at: daily.dates[peak],
+      as_of: daily.to,
+      source: 'cotacoes' as const,
+      points: daily.dates.length,
+      window_days: TOLERANCE_WINDOW_DAYS,
+    };
+  }
+  if (all.length < 2) return null;
   const since = new Date(Date.parse(last.taken_at.slice(0, 10)) - TOLERANCE_WINDOW_DAYS * DAY).toISOString().slice(0, 10);
   // Coletas da janela, da mais antiga para a mais nova. Com mais de uma conta, compara só a da última coleta.
   const window = all.filter((s) => s.account_id === last.account_id && s.taken_at.slice(0, 10) >= since).reverse();
@@ -87,7 +108,14 @@ function drawdown(db: DB) {
     index *= 1 + (totals.value_from_cents ? totals.market_cents / totals.value_from_cents : 0);
     if (index > peak.index) peak = { index, taken_at: window[i].taken_at };
   }
-  return { pct: (index / peak.index - 1) * 100, peak_at: peak.taken_at, snapshots: window.length, window_days: TOLERANCE_WINDOW_DAYS };
+  return {
+    pct: (index / peak.index - 1) * 100,
+    peak_at: peak.taken_at,
+    as_of: last.taken_at.slice(0, 10),
+    source: 'coletas' as const,
+    points: window.length,
+    window_days: TOLERANCE_WINDOW_DAYS,
+  };
 }
 
 export function buildPolicy(db: DB, researchDir: string | undefined) {
