@@ -221,3 +221,7 @@ td.flag-sem { color: var(--neg); }
 .line-chart .axis-zero { stroke: var(--muted); stroke-width: 1; }
 .line-chart .axis-mark { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; opacity: .7; }
 .line-chart .axis-label { fill: var(--muted); font-size: 11px; }
+
+/* Link com aparência de botão */
+a.button-link { display: inline-block; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-decoration: none; }
+a.button-link:hover { border-color: var(--accent); color: var(--accent); }

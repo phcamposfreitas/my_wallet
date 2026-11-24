@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db.ts';
 import { idParam } from '../crud.ts';
-import { buildTheses, thesesIncome, thesisDetail } from '../theses.ts';
+import { buildTheses, readMap, thesesIncome, thesisDetail } from '../theses.ts';
 import { yearSummary } from './budget.ts';
 import { buildPolicy } from '../policy.ts';
 import { buildPerformance } from '../performance.ts';
@@ -54,6 +54,9 @@ export function thesisRoutes(app: FastifyInstance, db: DB, opts: { researchDir?:
     };
     return thesesIncome(db, dir, q.months, netExpense);
   });
+
+  // Mapa da carteira (registrada antes de /theses/:id, como /theses/income).
+  app.get('/theses/map', async () => readMap(db, dir));
 
   app.get('/theses/:id', async (req, reply) => {
     const { id } = z.object({ id: z.string().regex(/^[\w-]+$/) }).parse(req.params);

@@ -68,6 +68,30 @@ export function readTheses(dir: string | undefined): ThesisFile[] {
   return out.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id));
 }
 
+/**
+ * Mapa da carteira: o `_mapa.md` da pasta de teses, um retrato datado escrito pelo CIO. O
+ * sistema só o exibe. `stale` avisa quando já existe coleta mais nova que o mapa.
+ */
+export function readMap(db: DB, dir: string | undefined) {
+  const file = dir ? join(dir, '_mapa.md') : null;
+  if (!file || !existsSync(file)) return { available: false as const };
+  const { meta, body } = parseFrontMatter(readFileSync(file, 'utf8'));
+  const str = (k: string) => (typeof meta[k] === 'string' && meta[k] ? (meta[k] as string) : null);
+  const updated = str('atualizado_em');
+  const last = (db.prepare('SELECT MAX(taken_at) AS t FROM snapshots').get() as { t: string | null }).t;
+  return {
+    available: true as const,
+    updated_on: updated,
+    base: str('base'),
+    author: str('autor'),
+    last_snapshot: last,
+    stale: !!updated && !!last && last.slice(0, 10) > updated,
+    // Para a tela trocar os links entre arquivos por links entre páginas.
+    files: Object.fromEntries(readTheses(dir).map((t) => [t.file, t.id])),
+    body,
+  };
+}
+
 const pct = (num: number, den: number) => (den ? (num / den) * 100 : null);
 
 /** Teses com os números da última coleta. Posição sem tese vai para o grupo `unassigned`. */
