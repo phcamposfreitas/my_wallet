@@ -513,3 +513,14 @@ export interface Performance {
     without_quote: string[];
   };
 }
+
+export interface ThesesMap {
+  available: boolean;
+  updated_on?: string | null;
+  base?: string | null;
+  author?: string | null;
+  last_snapshot?: string | null;
+  stale?: boolean;
+  files?: Record<string, string>;
+  body?: string;
+}

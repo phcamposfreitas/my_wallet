@@ -86,6 +86,19 @@ describe('teses', () => {
     expect((await req('GET', '/api/theses/T9')).status).toBe(404);
   });
 
+  it('devolve o mapa da carteira e avisa quando há coleta mais nova que ele', async () => {
+    expect((await req('GET', '/api/theses/map')).body).toEqual({ available: false });
+    writeFileSync(join(dir, 'teses', 'T2-a.md'), tese('T2', 'AAAA3'));
+    writeFileSync(join(dir, 'teses', '_mapa.md'), '---\natualizado_em: 2026-11-10\nbase: coleta de teste\nautor: CIO\n---\n\n# Mapa\n\n[T2](T2-a.md)\n');
+    const m = (await req('GET', '/api/theses/map')).body;
+    expect(m).toMatchObject({ available: true, updated_on: '2026-11-10', base: 'coleta de teste', author: 'CIO', stale: true, files: { 'T2-a.md': 'T2' } });
+    expect(m.body).toContain('# Mapa');
+
+    writeFileSync(join(dir, 'teses', '_mapa.md'), '---\natualizado_em: 2026-11-12\n---\n\n# Mapa\n');
+    expect((await req('GET', '/api/theses/map')).body.stale).toBe(false); // a coleta é de 12/11
+    expect((await req('GET', '/api/theses/T2')).status).toBe(200); // "map" não rouba a rota das teses
+  });
+
   it('avisa quando um ativo aparece em duas teses', async () => {
     writeFileSync(join(dir, 'teses', 'T1.md'), tese('T1', 'AAAA3'));
     writeFileSync(join(dir, 'teses', 'T2.md'), tese('T2', 'AAAA3'));

@@ -77,9 +77,12 @@ export default function ThesesTab() {
             <h2 style={{ margin: 0 }}>Carteira por tese</h2>
             <AsOf asOf={data.as_of} />
           </div>
-          <button onClick={() => setOpen(allOpen ? new Set() : new Set(groups.map((g) => g.key)))}>
-            {allOpen ? 'Recolher tudo' : 'Abrir tudo'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Link to="/carteira/teses/mapa" className="button-link">Mapa da carteira</Link>
+            <button onClick={() => setOpen(allOpen ? new Set() : new Set(groups.map((g) => g.key)))}>
+              {allOpen ? 'Recolher tudo' : 'Abrir tudo'}
+            </button>
+          </div>
         </div>
         <div className="table-wrap">
           <table>
