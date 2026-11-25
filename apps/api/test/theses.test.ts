@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDb } from '../src/db.ts';
+import { openDb, type DB } from '../src/db.ts';
 import { buildApp } from '../src/app.ts';
 import { importXpFiles } from '../src/importers/xp.ts';
 import { parseFrontMatter } from '../src/theses.ts';
@@ -29,6 +29,7 @@ const tese = (id: string, ativos: string, extra = '') =>
   `---\nid: ${id}\ntitulo: Tese ${id}\nstatus: ativa\nresponsavel: analista-acoes\nativos: [${ativos}]\nproxima_revisao: 2027-02-28\n${extra}---\n\n## Tese\n\nTexto da ${id}.\n`;
 
 let app: FastifyInstance;
+let db: DB;
 let dir: string;
 
 async function req(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown) {
@@ -37,7 +38,7 @@ async function req(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, pay
 }
 
 beforeEach(() => {
-  const db = openDb(':memory:');
+  db = openDb(':memory:');
   importXpFiles(db, [
     { name: 'dim_ativo.csv', text: DIM },
     { name: 'carteira_xp_historico.csv', text: CARTEIRA },
@@ -100,6 +101,35 @@ describe('teses', () => {
     expect(blocks[0]).toMatchObject({ theses: ['T1', 'T2'], assets_count: 2, value_cents: 200_000, cost_cents: 200_000, income_12m_cents: 5_000 });
     expect(blocks[0].weight_pct).toBeCloseTo(20);
     expect(blocks[1]).toMatchObject({ theses: ['T3'], value_cents: 800_000 });
+  });
+
+  it('mede a correlação semanal entre as teses e deixa fora a que não tem cotação', async () => {
+    writeFileSync(join(dir, 'teses', 'T1.md'), tese('T1', 'AAAA3'));
+    writeFileSync(join(dir, 'teses', 'T2.md'), tese('T2', 'BBBB3'));
+    writeFileSync(join(dir, 'teses', 'T3.md'), tese('T3', 'FFFF11'));
+    expect((await req('GET', '/api/theses/correlation')).body).toMatchObject({ available: false, reason: 'Nenhuma cotação importada.' });
+
+    // Dez sextas-feiras: BBBB3 anda sempre no sentido contrário de AAAA3; FFFF11 não tem cotação.
+    const id = (t: string) => (db.prepare('SELECT id FROM assets WHERE ticker = ?').get(t) as { id: number }).id;
+    const ins = db.prepare('INSERT INTO prices (asset_id, date, price_cents) VALUES (?, ?, ?)');
+    let a = 1000;
+    let b = 1000;
+    for (let i = 0; i < 10; i++) {
+      const day = new Date(Date.UTC(2026, 8, 4 + 7 * i)).toISOString().slice(0, 10);
+      const up = i % 3 === 0 ? 1.05 : 0.98;
+      a = Math.round(a * up);
+      b = Math.round(b / up);
+      ins.run(id('AAAA3'), day, a);
+      ins.run(id('BBBB3'), day, b);
+    }
+    const c = (await req('GET', '/api/theses/correlation?weeks=26')).body;
+    expect(c).toMatchObject({ available: true, weeks: 9 });
+    expect(c.theses.rows.map((r: { key: string }) => r.key)).toEqual(['T1', 'T2']);
+    expect(c.theses.matrix[0][0]).toBe(1);
+    expect(c.theses.matrix[0][1]).toBeLessThan(-0.99);
+    expect(c.theses.excluded).toEqual([{ key: 'T3', label: 'Tese T3', reason: 'sem cotação diária (FFFF11)' }]);
+    expect(c.coverage_pct).toBeCloseTo(20);
+    expect(c.shock_weeks).toHaveLength(4);
   });
 
   it('devolve o mapa da carteira e avisa quando há coleta mais nova que ele', async () => {

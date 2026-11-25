@@ -6,6 +6,7 @@ import { buildTheses, readMap, thesesIncome, thesisDetail } from '../theses.ts';
 import { yearSummary } from './budget.ts';
 import { buildPolicy } from '../policy.ts';
 import { buildPerformance } from '../performance.ts';
+import { buildCorrelation } from '../correlation.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve ser YYYY-MM-DD');
 
@@ -40,6 +41,11 @@ export function thesisRoutes(app: FastifyInstance, db: DB, opts: { researchDir?:
   app.get('/performance', async (req) => {
     const q = z.object({ from: date.optional() }).parse(req.query);
     return buildPerformance(db, { from: q.from, researchDir: opts.researchDir });
+  });
+  // Correlação semanal entre teses e entre blocos. Também antes de /theses/:id.
+  app.get('/theses/correlation', async (req) => {
+    const q = z.object({ weeks: z.coerce.number().int().min(8).max(260).default(52) }).parse(req.query);
+    return buildCorrelation(db, dir, { weeks: q.weeks });
   });
   // Renda mensal por tese. Registrada antes de /theses/:id para "income" não ser lido como id.
   app.get('/theses/income', async (req) => {

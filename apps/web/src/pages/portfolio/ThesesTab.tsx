@@ -162,6 +162,7 @@ export default function ThesesTab() {
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Link to="/carteira/teses/mapa" className="button-link">Mapa da carteira</Link>
+            <Link to="/carteira/teses/correlacao" className="button-link">Correlação</Link>
             <button onClick={() => setOpen(allOpen ? new Set() : new Set(groups.map((g) => g.key)))}>
               {allOpen ? 'Recolher tudo' : 'Abrir tudo'}
             </button>
