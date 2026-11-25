@@ -6,6 +6,7 @@ import TradesTab from './portfolio/TradesTab';
 import ImportTab from './portfolio/ImportTab';
 import ThesesTab from './portfolio/ThesesTab';
 import ThesisPage from './portfolio/ThesisPage';
+import CorrelationPage from './portfolio/CorrelationPage';
 import MapPage from './portfolio/MapPage';
 import PolicyTab from './portfolio/PolicyTab';
 import PerformanceTab from './portfolio/PerformanceTab';
@@ -31,6 +32,7 @@ export default function Portfolio() {
         <Route index element={<PositionsTab />} />
         <Route path="teses" element={<ThesesTab />} />
         <Route path="teses/mapa" element={<MapPage />} />
+        <Route path="teses/correlacao" element={<CorrelationPage />} />
         <Route path="teses/:id" element={<ThesisPage />} />
         <Route path="politica" element={<PolicyTab />} />
         <Route path="desempenho" element={<PerformanceTab />} />

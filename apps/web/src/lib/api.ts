@@ -387,6 +387,29 @@ export interface Theses {
   duplicated: { ticker: string; theses: string[] }[];
 }
 
+interface CorrelationTable {
+  rows: { key: string; label: string; coverage_pct: number; without_price: string[]; points: number }[];
+  columns: { key: string; label: string; ref: boolean }[];
+  /** Linha por `rows`, coluna por `columns`. null = semanas insuficientes. */
+  matrix: (number | null)[][];
+  matrix_calm: (number | null)[][];
+  excluded: { key: string; label: string; reason: string }[];
+}
+
+export type Correlation =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      weeks: number;
+      from: string;
+      to: string;
+      snapshot: string | null;
+      coverage_pct: number;
+      shock_weeks: { week_ending: string; market_pct: number }[];
+      theses: CorrelationTable;
+      blocks: CorrelationTable;
+    };
+
 export interface ThesisDetail extends Thesis {
   body: string;
   income: ThesisIncome | null;
