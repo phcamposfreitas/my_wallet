@@ -348,6 +348,7 @@ export interface Thesis extends ThesisGroup {
   id: string;
   title: string;
   status: string;
+  block: string | null;
   owner: string | null;
   created_on: string | null;
   last_review: string | null;
@@ -363,11 +364,25 @@ export interface ThesesAsOf {
   income_12m_from: string | null;
 }
 
+export interface ThesisBlock {
+  /** null = teses que não declaram bloco. */
+  name: string | null;
+  theses: string[];
+  assets_count: number;
+  in_review: number;
+  value_cents: number;
+  cost_cents: number;
+  weight_pct: number | null;
+  price_return_pct: number | null;
+  income_12m_cents: number;
+}
+
 export interface Theses {
   available: boolean;
   as_of: ThesesAsOf;
   total_cents: number;
   theses: Thesis[];
+  blocks: ThesisBlock[];
   unassigned: ThesisGroup;
   duplicated: { ticker: string; theses: string[] }[];
 }

@@ -22,6 +22,7 @@ export default function ThesisPage() {
         <h2 style={{ margin: '6px 0 4px' }}>{t.id} · {t.title}</h2>
         <p className="small muted" style={{ margin: 0 }}>
           <StatusBadge status={t.status} />
+          {t.block && <> · bloco: {t.block}</>}
           {t.owner && <> · responsável: {t.owner}</>}
           {t.last_review && <> · última revisão em {date(t.last_review)}</>}
           {' · próxima revisão: '}<ReviewDate next={t.next_review} />

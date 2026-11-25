@@ -5,7 +5,7 @@ import { buildPortfolio } from './snapshots.ts';
 
 /**
  * Teses de investimento. A fonte é o markdown em <pasta de dados>/research/teses: o sistema
- * lê o cabeçalho (id, título, status, ativos, datas) a cada consulta e junta com os números
+ * lê o cabeçalho (id, título, status, bloco, ativos, datas) a cada consulta e junta com os números
  * do banco. Nada das teses é gravado no banco, então a tela nunca fica atrás do arquivo.
  */
 
@@ -13,6 +13,8 @@ export interface ThesisFile {
   id: string;
   title: string;
   status: string;
+  /** Bloco por função (campo `bloco`). É só lente de leitura: não tem alvo nem teto. */
+  block: string | null;
   owner: string | null;
   tickers: string[];
   created_on: string | null;
@@ -53,6 +55,7 @@ export function readTheses(dir: string | undefined): ThesisFile[] {
       id,
       title: str('titulo') ?? id,
       status: str('status') ?? 'sem_status',
+      block: str('bloco'),
       owner: str('responsavel'),
       tickers: Array.isArray(meta.ativos) ? meta.ativos : [],
       created_on: str('criada_em'),
@@ -157,12 +160,37 @@ export function buildTheses(db: DB, dir: string | undefined) {
     tickers_without_position: tickers.filter((t) => !byTicker.has(t)),
   }));
 
+  // Blocos: cada tese declara o seu no cabeçalho, então a lista nasce e some com as teses.
+  // Tese sem bloco fica numa linha própria (nome null), só quando alguma outra declara bloco.
+  const names = [...new Set(theses.map((t) => t.block))];
+  const blocks = names.some((n) => n !== null)
+    ? names
+        .map((name) => {
+          const members = theses.filter((t) => t.block === name);
+          const value = members.reduce((s, t) => s + t.value_cents, 0);
+          const cost = members.reduce((s, t) => s + t.cost_cents, 0);
+          return {
+            name,
+            theses: members.map((t) => t.id),
+            assets_count: members.reduce((s, t) => s + t.assets.length, 0),
+            in_review: members.filter((t) => t.status === 'em_revisao').length,
+            value_cents: value,
+            cost_cents: cost,
+            weight_pct: pct(value, total),
+            price_return_pct: pct(value - cost, cost),
+            income_12m_cents: members.reduce((s, t) => s + t.income_12m_cents, 0),
+          };
+        })
+        .sort((a, b) => Number(a.name === null) - Number(b.name === null) || b.value_cents - a.value_cents)
+    : [];
+
   const unassignedTickers = portfolio.positions.filter((p) => !claimed.has(p.ticker)).map((p) => p.ticker);
   return {
     available: files.length > 0,
     as_of: { snapshot: snapshotDate, income_until: lastIncome, income_12m_from: snapshotDate ? start : null },
     total_cents: total,
     theses,
+    blocks,
     unassigned: group(unassignedTickers),
     // Um ativo deve estar em uma tese só; se aparecer em duas, o peso é contado duas vezes.
     duplicated: [...claimed.entries()].filter(([, ids]) => ids.length > 1).map(([ticker, ids]) => ({ ticker, theses: ids })),

@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { api, type Theses, type ThesesIncome, type ThesisAsset, type ThesisGroup } from '../../lib/api';
+import { api, type Theses, type ThesesIncome, type Thesis, type ThesisAsset, type ThesisBlock, type ThesisGroup } from '../../lib/api';
 import { ASSET_CLASS_LABEL, date, money, pct, signClass } from '../../lib/format';
 import StackedColumns, { shortMonth } from '../../components/StackedColumns';
 import { Kpi, Loading } from '../../components/ui';
@@ -25,6 +25,14 @@ export default function ThesesTab() {
   ];
   const allOpen = groups.length > 0 && groups.every((g) => open.has(g.key));
   const inReview = data.theses.filter((t) => t.status === 'em_revisao').length;
+  // Com blocos declarados, a tabela vem agrupada por eles; sem nenhum, é a lista simples.
+  const byId = new Map(data.theses.map((t) => [t.id, t]));
+  const sections = data.blocks.length
+    ? data.blocks.map((b) => ({ block: b as ThesisBlock | null, theses: b.theses.map((id) => byId.get(id)!).filter(Boolean) }))
+    : [{ block: null as ThesisBlock | null, theses: data.theses }];
+  const named = data.blocks.filter((b) => b.name !== null).length;
+  const income12 = groups.reduce((s, g) => s + g.group.income_12m_cents, 0);
+  const maxBlock = Math.max(1, ...data.blocks.map((b) => b.weight_pct ?? 0));
   const maxWeight = Math.max(1, ...groups.map((g) => g.group.weight_pct ?? 0));
 
   const assetRow = (a: ThesisAsset) => (
@@ -40,6 +48,36 @@ export default function ThesesTab() {
       <td className="num">{a.pays_cash ? money(a.income_12m_cents) : <span className="muted">sem cupom</span>}</td>
       <td />
     </tr>
+  );
+
+  const thesisRow = (t: Thesis) => (
+          <Fragment key={t.id}>
+            <tr>
+              <td style={{ whiteSpace: 'normal', minWidth: 260 }}>
+                <button className="ghost expander" aria-expanded={open.has(t.id)} aria-label={`Ativos de ${t.id}`} onClick={() => toggle(t.id)}>
+                  {open.has(t.id) ? '▾' : '▸'}
+                </button>
+                <Link to={`/carteira/teses/${t.id}`}><strong>{t.id}</strong> {t.title}</Link>
+                <div className="small muted" style={{ paddingLeft: 30 }}>
+                  {t.assets.length} {t.assets.length === 1 ? 'ativo' : 'ativos'}
+                  {t.tickers_without_position.length > 0 && ` · sem posição: ${t.tickers_without_position.join(', ')}`}
+                </div>
+              </td>
+              <td><StatusBadge status={t.status} /></td>
+              <td className="num">
+                {pct(t.weight_pct ?? 0, 1, false)}
+                <div className="bar-track" style={{ marginTop: 4, minWidth: 60 }}>
+                  <div className="bar-fill" style={{ width: `${((t.weight_pct ?? 0) / maxWeight) * 100}%` }} />
+                </div>
+              </td>
+              <td className="num">{money(t.value_cents)}</td>
+              <td className="num muted">{money(t.cost_cents)}</td>
+              <td className={`num ${signClass(t.price_return_pct)}`}>{pct(t.price_return_pct, 1)}</td>
+              <td className="num">{money(t.income_12m_cents)}</td>
+              <td><ReviewDate next={t.next_review} /></td>
+            </tr>
+            {open.has(t.id) && t.assets.map(assetRow)}
+          </Fragment>
   );
 
   return (
@@ -59,15 +97,60 @@ export default function ThesesTab() {
       )}
 
       <div className="grid kpis" style={{ marginBottom: 0 }}>
-        <Kpi label="Teses" value={data.theses.length} hint={inReview ? `${inReview} em revisão` : 'nenhuma em revisão'} />
+        <Kpi label="Teses" value={data.theses.length} hint={`${named ? `${named} blocos · ` : ''}${inReview ? `${inReview} em revisão` : 'nenhuma em revisão'}`} />
         <Kpi label="Posições" value={money(data.total_cents)} hint={`${groups.reduce((s, g) => s + g.group.assets.length, 0)} ativos`} />
         <Kpi
           label="Sem tese"
           value={pct(data.unassigned.weight_pct ?? 0, 1, false)}
           hint={data.unassigned.assets.length ? `${data.unassigned.assets.length} ativo(s) · ${money(data.unassigned.value_cents)}` : 'todas as posições têm tese'}
         />
-        <Kpi label="Proventos em 12 meses" value={money(groups.reduce((s, g) => s + g.group.income_12m_cents, 0))} hint="só das posições atuais" />
+        <Kpi label="Proventos em 12 meses" value={money(income12)} hint="só das posições atuais" />
       </div>
+
+      {named > 0 && (
+        <div className="card">
+          <h2 style={{ marginBottom: 4 }}>Carteira por bloco</h2>
+          <p className="small muted" style={{ margin: '0 0 10px' }}>
+            Cada tese declara o seu bloco. O bloco é lente de leitura: não tem alvo nem teto; os alvos são por classe e o teto é por tese (aba Política).
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bloco</th>
+                  <th>Teses</th>
+                  <th className="num">Peso</th>
+                  <th className="num">Valor</th>
+                  <th className="num" title="Proventos dos 12 meses até a última coleta ÷ 12">Renda por mês</th>
+                  <th className="num" title="Parte dos proventos de 12 meses das posições atuais">Parte da renda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.blocks.map((b) => (
+                  <tr key={b.name ?? '_'}>
+                    <td><strong>{b.name ?? 'Sem bloco'}</strong></td>
+                    <td style={{ whiteSpace: 'normal' }}>
+                      {b.theses.map((id, i) => (
+                        <Fragment key={id}>{i > 0 && ', '}<Link to={`/carteira/teses/${id}`}>{id}</Link></Fragment>
+                      ))}
+                      {b.in_review > 0 && <span className="small muted"> · {b.in_review} em revisão</span>}
+                    </td>
+                    <td className="num" style={{ minWidth: 110 }}>
+                      {pct(b.weight_pct ?? 0, 1, false)}
+                      <div className="bar-track" style={{ marginTop: 4 }}>
+                        <div className="bar-fill" style={{ width: `${((b.weight_pct ?? 0) / maxBlock) * 100}%` }} />
+                      </div>
+                    </td>
+                    <td className="num">{money(b.value_cents)}</td>
+                    <td className="num">{money(Math.round(b.income_12m_cents / 12))}</td>
+                    <td className="num">{income12 ? pct((b.income_12m_cents / income12) * 100, 0, false) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {income.data && income.data.months.length > 0 && <IncomeCard r={income.data} />}
 
@@ -99,33 +182,23 @@ export default function ThesesTab() {
               </tr>
             </thead>
             <tbody>
-              {data.theses.map((t) => (
-                <Fragment key={t.id}>
-                  <tr>
-                    <td style={{ whiteSpace: 'normal', minWidth: 260 }}>
-                      <button className="ghost expander" aria-expanded={open.has(t.id)} aria-label={`Ativos de ${t.id}`} onClick={() => toggle(t.id)}>
-                        {open.has(t.id) ? '▾' : '▸'}
-                      </button>
-                      <Link to={`/carteira/teses/${t.id}`}><strong>{t.id}</strong> {t.title}</Link>
-                      <div className="small muted" style={{ paddingLeft: 30 }}>
-                        {t.assets.length} {t.assets.length === 1 ? 'ativo' : 'ativos'}
-                        {t.tickers_without_position.length > 0 && ` · sem posição: ${t.tickers_without_position.join(', ')}`}
-                      </div>
-                    </td>
-                    <td><StatusBadge status={t.status} /></td>
-                    <td className="num">
-                      {pct(t.weight_pct ?? 0, 1, false)}
-                      <div className="bar-track" style={{ marginTop: 4, minWidth: 60 }}>
-                        <div className="bar-fill" style={{ width: `${((t.weight_pct ?? 0) / maxWeight) * 100}%` }} />
-                      </div>
-                    </td>
-                    <td className="num">{money(t.value_cents)}</td>
-                    <td className="num muted">{money(t.cost_cents)}</td>
-                    <td className={`num ${signClass(t.price_return_pct)}`}>{pct(t.price_return_pct, 1)}</td>
-                    <td className="num">{money(t.income_12m_cents)}</td>
-                    <td><ReviewDate next={t.next_review} /></td>
-                  </tr>
-                  {open.has(t.id) && t.assets.map(assetRow)}
+              {sections.map((sec) => (
+                <Fragment key={sec.block?.name ?? '_'}>
+                  {sec.block && (
+                    <tr className="block-row">
+                      <td colSpan={2}>
+                        {sec.block.name ?? 'Sem bloco'}
+                        <span className="small muted"> · {sec.theses.length} {sec.theses.length === 1 ? 'tese' : 'teses'}</span>
+                      </td>
+                      <td className="num">{pct(sec.block.weight_pct ?? 0, 1, false)}</td>
+                      <td className="num">{money(sec.block.value_cents)}</td>
+                      <td className="num muted">{money(sec.block.cost_cents)}</td>
+                      <td className={`num ${signClass(sec.block.price_return_pct)}`}>{pct(sec.block.price_return_pct, 1)}</td>
+                      <td className="num">{money(sec.block.income_12m_cents)}</td>
+                      <td />
+                    </tr>
+                  )}
+                  {sec.theses.map(thesisRow)}
                 </Fragment>
               ))}
               {data.unassigned.assets.length > 0 && (
