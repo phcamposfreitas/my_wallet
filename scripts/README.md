@@ -69,3 +69,67 @@ A B3 publica o arquivo do dia à noite, e dia sem pregão não tem arquivo. Para
 útil, agende o script no launchd com `StartCalendarInterval`, passando `WALLET_DB` e
 `API_PORT` em `EnvironmentVariables`. O histórico anterior vem dos arquivos anuais
 (`npm run download:cotahist -w apps/api -- 2025`).
+
+## Coleta da XP: extrato e notas
+
+Os dados da corretora chegam por dois leitores em `scripts/xp/`. Os arquivos de entrada e de
+saída ficam na pasta de dados, ao lado do banco, nunca no repositório. Nos exemplos,
+`C="$(dirname "$WALLET_DB")/coletas-xp"`.
+
+### Extrato → proventos, aportes e movimentos
+
+1. No portal, abra o extrato no modo **Simplificado**, escolha **Por período** e, na tabela,
+   copie as linhas para um TSV com as colunas Mov, Liq, Lançamentos, Valor e Saldo. No console
+   do navegador:
+
+   ```js
+   [...document.querySelectorAll('table tbody tr')]
+     .map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim().replace(/\s+/g, ' ')))
+     .filter(r => r.length === 5).map(r => r.join('\t')).join('\n')
+   ```
+
+   Os períodos de arquivos diferentes não podem se sobrepor.
+
+2. Gere os arquivos:
+
+   ```bash
+   python3 scripts/xp/extrato.py "$C/<pasta da coleta>" "$C/extrato-…/extrato-AAAAMMDD-AAAAMMDD.tsv"
+   ```
+
+   Saem `fato_provento.csv`, `fato_fluxo.csv` (aporte, retirada, exterior e cashback) e
+   `fato_movimento.csv` (Tesouro, fundos, CDB, subscrições, opções e custos).
+   - O script sai com erro se o saldo não encadear linha a linha ou se algum lançamento ficar
+     sem classificação. Nesse caso, ajuste as regras no script.
+   - As compras e vendas em bolsa e o aluguel de ações (BTC) ficam de fora de propósito.
+
+### Notas de negociação → compras e vendas
+
+1. Em Renda Variável › Notas de negociação, baixe cada nota no **modelo B3**. Depois extraia o
+   texto: `pdftotext -layout nota.pdf nota.txt`.
+2. Gere as operações:
+
+   ```bash
+   python3 scripts/xp/notas.py "$C/<pasta da coleta>/fato_operacao.csv" "$C/notas/txt"
+   ```
+
+   - O ticker de uma ação vem do nome que a nota traz (por exemplo, "EMPRESA ON" → XXXX3). Um nome
+     novo faz o script parar com erro: acrescente-o ao mapa `coletas-xp/mapa.json`, na pasta de dados (fora do repositório, porque revela o que foi negociado).
+   - As taxas da nota são rateadas pelo valor de cada operação.
+   - Opções e operações da BM&F ficam de fora.
+
+### Importar
+
+```bash
+WALLET_DB="$WALLET_DB" npm run import:xp -w apps/api -- "$C/<pasta da coleta>"
+```
+
+Os importadores não duplicam lançamentos: reprocessar o extrato inteiro ou todas as notas só
+grava o que é novo. Teste antes numa cópia do banco (veja o `CLAUDE.md`) e evite importar às
+21h30, quando roda a atualização diária de mercado.
+
+### Quando coletar a carteira
+
+Durante o pregão, a tela Carteira mostra o saldo de cada classe pelo fechamento do dia anterior,
+que bate com as cotações da B3 em `prices`, mas as linhas por ativo trazem o preço do momento.
+Para gravar uma coleta de posições, leia a carteira depois do fechamento, quando as linhas e os
+saldos coincidem.
