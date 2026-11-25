@@ -86,6 +86,22 @@ describe('teses', () => {
     expect((await req('GET', '/api/theses/T9')).status).toBe(404);
   });
 
+  it('soma as teses por bloco; sem nenhum bloco declarado, a lista vem vazia', async () => {
+    writeFileSync(join(dir, 'teses', 'T1.md'), tese('T1', 'AAAA3'));
+    expect((await req('GET', '/api/theses')).body.blocks).toEqual([]);
+
+    writeFileSync(join(dir, 'teses', 'T1.md'), tese('T1', 'AAAA3', 'bloco: Renda de ações\n'));
+    writeFileSync(join(dir, 'teses', 'T2.md'), tese('T2', 'BBBB3', 'bloco: Renda de ações\n'));
+    writeFileSync(join(dir, 'teses', 'T3.md'), tese('T3', 'FFFF11'));
+    const { blocks, theses } = (await req('GET', '/api/theses')).body;
+    expect(theses[0].block).toBe('Renda de ações');
+    // Com bloco na frente, por valor; as teses sem bloco ficam no fim, mesmo sendo maiores.
+    expect(blocks.map((b: { name: string | null }) => b.name)).toEqual(['Renda de ações', null]);
+    expect(blocks[0]).toMatchObject({ theses: ['T1', 'T2'], assets_count: 2, value_cents: 200_000, cost_cents: 200_000, income_12m_cents: 5_000 });
+    expect(blocks[0].weight_pct).toBeCloseTo(20);
+    expect(blocks[1]).toMatchObject({ theses: ['T3'], value_cents: 800_000 });
+  });
+
   it('devolve o mapa da carteira e avisa quando há coleta mais nova que ele', async () => {
     expect((await req('GET', '/api/theses/map')).body).toEqual({ available: false });
     writeFileSync(join(dir, 'teses', 'T2-a.md'), tese('T2', 'AAAA3'));
