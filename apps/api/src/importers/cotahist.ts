@@ -176,7 +176,10 @@ function openCotahist(path: string): Readable {
   return inflate;
 }
 
-/** Linhas do arquivo (ZIP ou TXT), em latin1 e sem o fim de linha (CRLF ou LF). */
+/**
+ * Linhas do arquivo (ZIP ou texto), em latin1 e sem o fim de linha (CRLF ou LF). Do ZIP lê a
+ * primeira entrada .TXT, ou a primeira entrada se não houver (serve também ao CSV da CVM).
+ */
 export async function* readCotahistLines(path: string): AsyncGenerator<string> {
   let rest = '';
   for await (const chunk of openCotahist(path)) {

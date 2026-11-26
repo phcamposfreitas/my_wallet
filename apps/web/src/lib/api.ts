@@ -101,6 +101,7 @@ export interface Position {
   cost_cents: number | null;
   broker_return_pct: number | null;
   maturity_date: string | null;
+  cnpj?: string | null;
   income_cents: number;
   price_return_pct: number | null;
   total_return_pct: number | null;
@@ -563,8 +564,13 @@ export interface PerformanceReference {
   source: 'embutida' | 'arquivo';
   kind: 'serie' | 'composicao';
   values: (number | null)[];
+  /** Com proventos reinvestidos (igual a `values` para o CDI e para quem não tem proventos registrados). */
+  total: (number | null)[];
   pct: number | null;
+  total_pct: number | null;
   first_date: string | null;
+  /** Ativos sem nenhum provento registrado: neles o retorno total é só preço. */
+  income_missing: string[];
   /** Só nas composições: cada rebalanceamento simulado e a parte do peso que tinha cotação. */
   rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[] | null;
 }

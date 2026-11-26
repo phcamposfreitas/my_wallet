@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { openDb, type DB } from '../src/db.ts';
 import { buildApp } from '../src/app.ts';
 import { importXpFiles } from '../src/importers/xp.ts';
+import { importTesouro } from '../src/importers/tesouro.ts';
 
 const DIM = `ticker,nome,isin,tipo,classe,setor,qtd_atual,preco_medio,fonte_isin,status_cadastro
 AAAA3,Empresa A,,ON,acao,Bancos,100,10,a coletar,a confirmar
@@ -191,5 +192,42 @@ describe('desempenho diário', () => {
     expect(meio.values[1]).toBeCloseTo(10);
     expect(meio.values[2]).toBeCloseTo(10);
     expect(meio.values[3]).toBeCloseTo(21);
+  });
+
+  it('retorno total: reinvestimento pela data-com (JCP líquido) e Tesouro marcado todo dia', async () => {
+    for (const [d, a] of [['2026-11-02', 1000], ['2026-11-03', 1100], ['2026-11-04', 1100], ['2026-11-05', 1210]] as const) {
+      price('AAAA3', d, a);
+      price('BBBB3', d, 100);
+    }
+    const a = (db.prepare("SELECT id FROM assets WHERE ticker = 'AAAA3'").get() as { id: number }).id;
+    const inc = db.prepare("INSERT INTO market_income (asset_id, last_date_with, type, value_per_unit, source) VALUES (?, '2026-11-03', ?, ?, 'teste')");
+    inc.run(a, 'dividendo', 0.33);
+    inc.run(a, 'jcp', 0.22 / 0.85); // líquido: R$ 0,22
+    await importTesouro(db, {
+      text: [
+        'Tipo Titulo;Data Vencimento;Data Base;PU Base Manha',
+        ...[['02/11/2026', '1000,00'], ['03/11/2026', '1001,00'], ['04/11/2026', '1010,00'], ['05/11/2026', '1011,00']].map(([d, v]) => `Tesouro Selic;01/03/2029;${d};${v}`),
+      ].join('\n'),
+    });
+    const dir = mkdtempSync(join(tmpdir(), 'research-'));
+    mkdirSync(join(dir, 'referencias'));
+    writeFileSync(join(dir, 'referencias', 'so-a.md'), '---\nid: so-a\n---\n| 2026-10-01 | AAAA3 | 100 |\n');
+    writeFileSync(join(dir, 'referencias', 'a.md'), '---\nid: A\ntipo: serie\nticker: AAAA3\n---\n');
+    const p = (await buildApp(db, { researchDir: dir }).inject({ method: 'GET', url: '/api/performance' })).json();
+    const ref = (k: string) => p.references.find((r: { key: string }) => r.key === k);
+
+    // R$ 0,55 por ação com data-com em 03/11, recomprados a R$ 11,00 no fechamento de 04/11: +5% de ações.
+    const total = (1.21 * 1.05 - 1) * 100;
+    expect(ref('so-a')).toMatchObject({ income_missing: [] });
+    expect(ref('so-a').pct).toBeCloseTo(21);
+    expect(ref('so-a').total[1]).toBeCloseTo(10); // antes da data ex, nada muda
+    expect(ref('so-a').total_pct).toBeCloseTo(total);
+    expect(ref('A').total_pct).toBeCloseTo(total);
+    expect(ref('CDI').total).toEqual(ref('CDI').values);
+    expect(ref('IBOV').income_missing).toEqual(['BOVA11']);
+
+    // O Tesouro passa a ter cotação diária: nada fica parado entre coletas.
+    expect(p.summary.unpriced_pct).toBe(0);
+    expect(p.series.price[1]).toBeCloseTo((2201 / 2100 - 1) * 100); // AAAA3 +100, LFT +1
   });
 });

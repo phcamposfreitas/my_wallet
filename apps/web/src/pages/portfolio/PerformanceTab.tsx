@@ -103,7 +103,7 @@ export default function PerformanceTab() {
           lines={[
             { key: 'total', label: 'Carteira com proventos', color: 'var(--accent)', values: data.series.total, width: 2.4 },
             { key: 'price', label: 'Carteira, só preço', color: 'var(--accent)', values: data.series.price, dashed: true },
-            ...refs.filter((r) => shownRefs.includes(r.key)).map((r) => ({ key: `ref:${r.key}`, label: r.label, color: refColor(r.key), values: r.values })),
+            ...refs.filter((r) => shownRefs.includes(r.key)).map((r) => ({ key: `ref:${r.key}`, label: r.label, color: refColor(r.key), values: r.total })),
             ...data.groups
               .filter((g) => shownGroups.includes(g.key))
               .map((g) => ({ key: `g:${g.key}`, label: g.kind === 'bloco' ? `Bloco ${g.label}` : `${g.key} ${g.label}`, color: groupColor(g.key), values: g.total, dashed: g.kind === 'bloco' })),
@@ -111,17 +111,17 @@ export default function PerformanceTab() {
         />
         <p className="small muted" style={{ margin: '8px 0 0' }}>
           Entre duas coletas vale a carteira da coleta anterior. Compras e vendas do intervalo entram na data da coleta seguinte e não contam como ganho
-          nem perda. Variações de mais de 3× num dia são tratadas como grupamento ou desdobramento. Os ETFs entram só pelo preço: o que eles distribuem
-          não aparece.
+          nem perda. Variações de mais de 3× num dia são tratadas como grupamento ou desdobramento. As referências aparecem com proventos reinvestidos
+          quando há proventos registrados (B3 para ações; extrato para os FIIs da carteira); os ETFs, sem essa fonte, entram só pelo preço.
         </p>
       </div>
 
       <div className="card">
         <h2 style={{ marginBottom: 4 }}>Referências no período</h2>
         <p className="small muted" style={{ margin: '0 0 8px' }}>
-          A diferença compara a carteira com proventos com cada referência na mesma janela. Referência cotada só depois do início conta a partir do
-          primeiro fechamento. As carteiras de composição são simuladas só pelo preço: compram os pesos no fechamento do primeiro pregão a partir da
-          publicação e seguram até a vigência seguinte.
+          A diferença compara a carteira com proventos com cada referência com proventos, na mesma janela. Referência cotada só depois do início conta a partir do
+          primeiro fechamento. As carteiras de composição compram os pesos no fechamento do primeiro pregão a partir da publicação e seguram até a
+          vigência seguinte; com proventos, o que cada ativo paga é recomprado no pregão seguinte à data-com (JCP com 15% de IR retido).
         </p>
         <div className="table-wrap">
           <table>
@@ -129,7 +129,8 @@ export default function PerformanceTab() {
               <tr>
                 <th>Referência</th>
                 <th>Fonte</th>
-                <th className="num">No período</th>
+                <th className="num">Só preço</th>
+                <th className="num">Com proventos</th>
                 <th className="num">Carteira − referência</th>
                 <th>Desde</th>
               </tr>
@@ -138,6 +139,7 @@ export default function PerformanceTab() {
               {data.references.map((r) => {
                 const i = r.first_date ? data.dates.indexOf(r.first_date) : -1;
                 const mine = i >= 0 ? changeSince(data.series.total, i) : null;
+                const priceOnly = r.income_missing.length > 0 && r.kind === 'serie';
                 return (
                   <tr key={r.key}>
                     <td>
@@ -150,6 +152,9 @@ export default function PerformanceTab() {
                       ) : (
                         r.source === 'arquivo' && <span className="badge" style={{ marginLeft: 6 }}>arquivo</span>
                       )}
+                      {r.kind === 'composicao' && r.income_missing.length > 0 && (
+                        <div className="muted">sem proventos registrados (entram só pelo preço): {r.income_missing.join(', ')}</div>
+                      )}
                       {r.rebalances
                         ?.filter((b) => b.priced_pct < 99.5 && b.on >= data.from)
                         .map((b) => (
@@ -158,9 +163,12 @@ export default function PerformanceTab() {
                           </div>
                         ))}
                     </td>
-                    <td className={`num ${signClass(r.pct)}`}>{r.pct === null ? <span className="muted">sem cotação</span> : pct(r.pct, 1)}</td>
-                    <td className={`num ${signClass(mine !== null && r.pct !== null ? mine - r.pct : null)}`}>
-                      {mine !== null && r.pct !== null ? `${pct(mine - r.pct, 1).replace('%', '')} p.p.` : '—'}
+                    <td className={`num ${signClass(r.pct)}`}>{r.pct === null ? <span className="muted">sem cotação</span> : r.ticker === null && r.kind === 'serie' ? '—' : pct(r.pct, 1)}</td>
+                    <td className={`num ${signClass(r.total_pct)}`}>
+                      {r.total_pct === null ? '—' : priceOnly ? <span className="muted" title="sem proventos registrados">só preço</span> : pct(r.total_pct, 1)}
+                    </td>
+                    <td className={`num ${signClass(mine !== null && r.total_pct !== null ? mine - r.total_pct : null)}`}>
+                      {mine !== null && r.total_pct !== null ? `${pct(mine - r.total_pct, 1).replace('%', '')} p.p.` : '—'}
                     </td>
                     <td className="small">{r.first_date && r.first_date !== data.from ? date(r.first_date) : <span className="muted">início</span>}</td>
                   </tr>
@@ -211,7 +219,7 @@ export default function PerformanceTab() {
                 {data.groups.map((g) => {
                   const ref = compare(g.references);
                   const i = g.summary.first_date ? data.dates.indexOf(g.summary.first_date) : -1;
-                  const refPct = ref && i >= 0 ? changeSince(ref.values, i) : null;
+                  const refPct = ref && i >= 0 ? changeSince(ref.total, i) : null;
                   const diff = g.summary.total_pct !== null && refPct !== null ? g.summary.total_pct - refPct : null;
                   return (
                     <tr key={g.key} className={g.kind === 'bloco' ? 'muted-row' : undefined}>
