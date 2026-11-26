@@ -39,8 +39,8 @@ export function thesisRoutes(app: FastifyInstance, db: DB, opts: { researchDir?:
 
   // Desempenho diário contra CDI, Ibovespa e IFIX, e a variação do último pregão.
   app.get('/performance', async (req) => {
-    const q = z.object({ from: date.optional() }).parse(req.query);
-    return buildPerformance(db, { from: q.from, researchDir: opts.researchDir });
+    const q = z.object({ from: date.optional(), compare: z.string().max(64).optional() }).parse(req.query);
+    return buildPerformance(db, { from: q.from, compare: q.compare, researchDir: opts.researchDir });
   });
   // Correlação semanal entre teses e entre blocos. Também antes de /theses/:id.
   app.get('/theses/correlation', async (req) => {

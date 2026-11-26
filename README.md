@@ -146,6 +146,7 @@ A sessão principal faz o papel de CIO e conduz os rituais:
 | `/rotina-diaria` | todo dia útil, depois do fechamento |
 | `/nova-coleta [pasta]` | quando exportar os CSVs da XP |
 | `/revisar-tese <tese ou ticker>` | depois de um alerta, de resultado trimestral ou de fato relevante |
+| `/nova-referencia <fonte>` | quando chega uma carteira recomendada ou a revisão de uma casa |
 | `/comite-investimentos` | uma vez por mês |
 
 Os agentes analisam e preparam decisões, mas não operam nem recomendam. Teses, notas e atas

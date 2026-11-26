@@ -225,3 +225,78 @@ export const lastOf = (xs: (number | null)[]) => {
   for (let i = xs.length - 1; i >= 0; i--) if (xs[i] !== null) return xs[i];
   return null;
 };
+
+export interface WeightVersion {
+  /** Data de vigência (publicação). O rebalanceamento é feito no fechamento do primeiro pregão a partir dela. */
+  from: string;
+  weights: { ticker: string; weight_pct: number }[];
+}
+
+export interface WeightsIndex {
+  values: (number | null)[];
+  /** Por rebalanceamento: data efetiva, parte do peso com cotação e ativos sem cotação (pesos redistribuídos entre os demais). */
+  rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[];
+}
+
+/**
+ * Carteira de composição simulada no eixo: em cada vigência compra os pesos pelo fechamento do
+ * primeiro pregão a partir da data de publicação (nunca antes: sem olhar o futuro) e segura até a
+ * vigência seguinte, deixando os pesos andarem com o mercado. Só preço. Ativo sem cotação na
+ * data fica de fora e o peso dele é redistribuído entre os demais. Vigência anterior ao eixo vale
+ * desde o início do eixo (a mais recente delas).
+ */
+export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: string[]): WeightsIndex {
+  const values: (number | null)[] = axis.map(() => null);
+  const rebalances: WeightsIndex['rebalances'] = [];
+  const starts = new Map<number, WeightVersion>(); // posição no eixo -> vigência
+  for (const v of [...versions].sort((a, b) => a.from.localeCompare(b.from))) {
+    const i = axis.findIndex((d) => d >= v.from);
+    if (i >= 0) starts.set(i, v); // a mais recente que cai no mesmo pregão vence
+  }
+  const order = [...starts.keys()].sort((a, b) => a - b);
+  let holdings: { id: number; q: number; last: number; frozen: number | null }[] = [];
+  let level = 1;
+
+  const mark = (day: string) => {
+    let v = 0;
+    for (const h of holdings) {
+      if (h.frozen === null) {
+        const px = md.closeAt(h.id, day)!.price;
+        if (px / h.last > EVENT_RATIO || h.last / px > EVENT_RATIO) h.frozen = h.q * h.last;
+        else h.last = px;
+      }
+      v += h.frozen ?? h.q * h.last;
+    }
+    return v;
+  };
+
+  for (let s = 0; s < order.length; s++) {
+    const start = order[s];
+    const end = order[s + 1] ?? axis.length;
+    const day = axis[start];
+    if (holdings.length) level = mark(day); // a carteira anterior anda até o fechamento do rebalanceamento
+    const v = starts.get(start)!;
+    const priced = v.weights.flatMap((w) => {
+      const id = md.assetId(w.ticker);
+      const c = id !== undefined ? md.closeAt(id, day) : null;
+      return id !== undefined && c && dayDiff(c.date, day) <= STALE_DAYS ? [{ id, w: w.weight_pct, price: c.price }] : [];
+    });
+    const pricedW = priced.reduce((a, p) => a + p.w, 0);
+    const total = v.weights.reduce((a, w) => a + w.weight_pct, 0);
+    rebalances.push({
+      from: v.from,
+      on: day,
+      priced_pct: total ? (pricedW / total) * 100 : 0,
+      missing: v.weights.filter((w) => !priced.some((p) => md.assetId(w.ticker) === p.id)).map((w) => w.ticker),
+    });
+    if (!pricedW) {
+      holdings = [];
+      continue;
+    }
+    holdings = priced.map((p) => ({ id: p.id, q: (level * p.w) / pricedW / p.price, last: p.price, frozen: null }));
+    values[start] = level;
+    for (let i = start + 1; i < end; i++) values[i] = mark(axis[i]);
+    level = values[end - 1] ?? level;
+  }
+  return { values, rebalances };
+}

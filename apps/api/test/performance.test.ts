@@ -143,6 +143,22 @@ describe('desempenho diário', () => {
     expect(ref('SMALL')).toMatchObject({ source: 'arquivo', label: 'Small (arquivo)' });
     expect(ref('SP500').pct).toBeNull(); // sem cotação de IVVB11
 
+    // A composição vira série: até 03/11 vale a vigência de 01/10 (100% AAAA3, desde o início);
+    // em 03/11 entra a nova, mas ZZZZ3 não tem cotação e o peso dela vai para AAAA3. A de 01/12 ainda não existe.
+    expect(ref('casa-x')).toMatchObject({ kind: 'composicao', note: 'Casa X', first_date: '2026-11-02' });
+    expect(ref('casa-x').pct).toBeCloseTo(21);
+    expect(ref('casa-x').rebalances).toEqual([
+      { from: '2026-10-01', on: '2026-11-02', priced_pct: 100, missing: [] },
+      { from: '2026-11-03', on: '2026-11-03', priced_pct: 30, missing: ['ZZZZ3'] },
+    ]);
+    // Risco contra o Ibovespa por padrão; com poucos pregões, sem volatilidade nem beta.
+    expect(p.stats.compare).toEqual({ key: 'IBOV', label: 'Ibovespa' });
+    expect(p.stats.rows[0]).toMatchObject({ key: '_carteira', kind: 'carteira', vol_pct: null, beta: null, months: 1, months_beat: 1 });
+    expect(p.stats.rows.some((r: { key: string }) => r.key === 'IBOV')).toBe(false);
+    const vsCasa = (await app2.inject({ method: 'GET', url: '/api/performance?compare=casa-x' })).json();
+    expect(vsCasa.stats.compare.key).toBe('casa-x');
+    expect(vsCasa.stats.rows.find((r: { key: string }) => r.key === 'T1')).toMatchObject({ months: 1, months_beat: 0 }); // 21% = 21%: não ficou acima
+
     // Active share na última coleta (04/11), com a vigência de 03/11: 30% AAAA3 + 70% ZZZZ3.
     const r = (await app2.inject({ method: 'GET', url: '/api/references' })).json();
     const casa = r.compositions[0];
@@ -156,5 +172,24 @@ describe('desempenho diário', () => {
     // Recorte da carteira: ZZZZ3 não está cadastrado; só AAAA3 dá a classe (ações) → AAAA3 2.200 + BBBB3 100.
     const w = 2200 / 2300;
     expect(row('_carteira').active_share_pct).toBeCloseTo((Math.abs(w * 100 - 30) + (1 - w) * 100 + 70) / 2);
+  });
+
+  it('simula a carteira de composição: rebalanceia na vigência e não confunde grupamento com mercado', async () => {
+    for (const [d, a, b] of [['2026-11-02', 1000, 100], ['2026-11-03', 1100, 110], ['2026-11-04', 1100, 1000], ['2026-11-05', 1210, 1000]] as const) {
+      price('AAAA3', d, a);
+      price('BBBB3', d, b); // 04/11: grupamento 10:1
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'research-'));
+    mkdirSync(join(dir, 'referencias'));
+    writeFileSync(
+      join(dir, 'referencias', 'meio.md'),
+      ['---', 'id: meio', '---', '| 2026-10-01 | AAAA3 | 50 |', '| 2026-10-01 | BBBB3 | 50 |', '| 2026-11-04 | AAAA3 | 100 |'].join('\n'),
+    );
+    const p = (await buildApp(db, { researchDir: dir }).inject({ method: 'GET', url: '/api/performance' })).json();
+    const meio = p.references.find((r: { key: string }) => r.key === 'meio');
+    // 03/11: os dois sobem 10%. 04/11: BBBB3 congelada no salto de 9×, e tudo vai para AAAA3 a 11,00. 05/11: +10%.
+    expect(meio.values[1]).toBeCloseTo(10);
+    expect(meio.values[2]).toBeCloseTo(10);
+    expect(meio.values[3]).toBeCloseTo(21);
   });
 });

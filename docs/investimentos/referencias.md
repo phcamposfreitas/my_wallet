@@ -9,10 +9,35 @@ comparar, mais adiante, carteiras de casas e teses hipotéticas com a carteira r
 | Tipo | O que é | Uso hoje |
 |---|---|---|
 | `serie` | uma série de preço pronta: o CDI ou um ETF da B3 | linha no gráfico e diferença em p.p. na aba **Desempenho** |
-| `composicao` | ativos com peso e data de vigência (carteira recomendada de uma casa, carteira teórica de um índice) | sobreposição (active share) com a carteira, as teses e os blocos |
+| `composicao` | ativos com peso e data de vigência (carteira recomendada de uma casa, carteira teórica de um índice) | simulada dia a dia como série; sobreposição (active share) com a carteira, as teses e os blocos |
 
-A simulação diária das carteiras de composição fica para a fase 2. Os pesos já gravados nos
-arquivos vão servir para ela sem mudança de formato.
+Para cadastrar uma carteira de casa, use o ritual `/nova-referencia`.
+
+## Simulação das composições
+
+- Em cada vigência a carteira compra os pesos pelo **fechamento do primeiro pregão a partir
+  da publicação**, nunca antes, e segura até a vigência seguinte. Os pesos andam com o
+  mercado no intervalo.
+- Vigência anterior ao início do período vale desde o início (a mais recente delas).
+- Ativo sem cotação na data fica de fora e o peso dele vai para os demais. A tela mostra a
+  parte do peso que tinha cotação em cada rebalanceamento.
+- Variação de mais de 3× num dia é tratada como grupamento ou desdobramento, como na
+  carteira.
+- Só preço, sem custos e sem proventos. O desempenho que a casa divulga costuma incluir
+  proventos, então os números não vão bater com o relatório dela.
+
+## Risco contra a referência
+
+Na aba **Desempenho**, cada linha (carteira, teses, blocos, outras referências) traz, contra
+a referência escolhida:
+
+- volatilidade anualizada;
+- beta e correlação dos retornos diários;
+- tracking error (o quanto a diferença de retorno oscila);
+- em quantos meses ficou acima, só nos meses em que as duas séries existem.
+
+Precisa de 10 pregões. O que não tem cotação diária anda de uma vez na data da coleta e
+infla esses números: com poucos meses, leia como indicação.
 
 ## Séries embutidas
 
@@ -24,7 +49,10 @@ arquivos vão servir para ela sem mudança de formato.
 | `IDIV` | Dividendos (IDIV) | ETF DIVO11 |
 | `SMLL` | Small caps (SMLL) | ETF SMAL11 |
 | `SP500` | S&P 500 em reais | ETF IVVB11 |
-| `IMAB` | IMA-B (Tesouro IPCA+) | ETF IMAB11 |
+
+Não há ETF de IMA-B no COTAHIST de 2026 (IMAB11 e B5P211 não aparecem). Para comparar os
+títulos IPCA+ com um índice, cadastre a série por arquivo (`tipo: serie`) quando houver um
+ticker negociado.
 
 Os ETFs entram **só pelo preço**: o que distribuem não aparece. A cotação deles vem do
 COTAHIST como a dos ativos da carteira. Um ETF passa a ter cotação a partir do primeiro
@@ -73,8 +101,7 @@ Notas livres sobre a carteira.
 - Cada vigência nova repete a carteira inteira. Pesos que não somam 100% são normalizados,
   com aviso na tela.
 - Peso aceita `10`, `10,5` e `10%`.
-- Os ativos da composição também entram no importador do COTAHIST: já ficam com cotação
-  para a simulação da fase 2.
+- Os ativos da composição também entram no importador do COTAHIST, para a simulação.
 
 ## Teses
 
@@ -100,8 +127,7 @@ aparece marcada como "da tese".
 
 ## Próximas fases
 
-1. Simular as carteiras de composição dia a dia, só preço, com o mesmo motor.
-2. Proventos de mercado por ativo, para ter retorno total dos dois lados; cotas de fundos
+1. Proventos de mercado por ativo, para ter retorno total dos dois lados; cotas de fundos
    pelo informe diário da CVM.
-3. Carteiras hipotéticas (teses que ainda não foram montadas), acompanhadas para frente a
+2. Carteiras hipotéticas (teses que ainda não foram montadas), acompanhadas para frente a
    partir da data de registro, e backtest com aviso de viés.

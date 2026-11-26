@@ -526,6 +526,7 @@ export interface Performance {
   series: Record<'price' | 'total' | 'cdi' | 'ibovespa' | 'ifix', (number | null)[]>;
   references: PerformanceReference[];
   groups: PerformanceGroup[];
+  stats: { compare: { key: string; label: string } | null; rows: RiskRow[] };
   summary: {
     price_pct: number | null;
     total_pct: number | null;
@@ -560,9 +561,25 @@ export interface PerformanceReference {
   ticker: string | null;
   note: string;
   source: 'embutida' | 'arquivo';
+  kind: 'serie' | 'composicao';
   values: (number | null)[];
   pct: number | null;
   first_date: string | null;
+  /** Só nas composições: cada rebalanceamento simulado e a parte do peso que tinha cotação. */
+  rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[] | null;
+}
+
+export interface RiskRow {
+  key: string;
+  label: string;
+  kind: 'carteira' | 'tese' | 'bloco' | 'referencia';
+  days: number;
+  vol_pct: number | null;
+  beta: number | null;
+  correlation: number | null;
+  tracking_error_pct: number | null;
+  months: number;
+  months_beat: number;
 }
 
 export interface PerformanceGroup {

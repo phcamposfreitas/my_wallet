@@ -10,8 +10,8 @@ import { buildTheses, parseFrontMatter } from './theses.ts';
  * - `serie`: uma série de preço pronta (CDI ou um ETF negociado na B3). Vira índice diário
  *   no mesmo eixo da carteira (ver performance.ts).
  * - `composicao`: uma lista de ativos com peso e data de vigência, como as carteiras
- *   recomendadas das casas ou a carteira teórica de um índice. Nesta fase serve para medir a
- *   sobreposição (active share); a simulação diária vem depois, com o mesmo motor de índice.
+ *   recomendadas das casas ou a carteira teórica de um índice. É simulada dia a dia pelo motor
+ *   de índice (weightsIndex em price-index.ts) e serve também para a sobreposição (active share).
  *
  * As séries embutidas ficam abaixo. As da pasta `research/referencias/` (uma por arquivo
  * markdown, fora do git) somam-se a elas: o conteúdo das casas é do titular e costuma ser pago.
@@ -51,7 +51,6 @@ export const BUILTIN_REFERENCES: SeriesReference[] = [
   { key: 'IDIV', label: 'Dividendos (IDIV)', ticker: 'DIVO11', note: 'pelo ETF DIVO11', source: 'embutida' },
   { key: 'SMLL', label: 'Small caps (SMLL)', ticker: 'SMAL11', note: 'pelo ETF SMAL11', source: 'embutida' },
   { key: 'SP500', label: 'S&P 500 em reais', ticker: 'IVVB11', note: 'pelo ETF IVVB11', source: 'embutida' },
-  { key: 'IMAB', label: 'IMA-B (Tesouro IPCA+)', ticker: 'IMAB11', note: 'pelo ETF IMAB11', source: 'embutida' },
 ];
 
 export interface CompositionReference {
