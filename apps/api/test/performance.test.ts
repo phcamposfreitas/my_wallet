@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -91,5 +91,70 @@ describe('desempenho diário', () => {
     expect(cut.dates).toEqual(['2026-11-04', '2026-11-05', '2026-11-06']);
     expect(cut.series.price[0]).toBe(0);
     expect(cut.series.price[1]).toBeCloseTo((3530 / 3310 - 1) * 100);
+  });
+
+  it('monta a série de cada tese e de cada bloco, e as referências do catálogo e dos arquivos', async () => {
+    for (const [d, a, b] of [['2026-11-02', 1000, 100], ['2026-11-03', 1100, 110], ['2026-11-04', 1100, 1000], ['2026-11-05', 1210, 1000]] as const) {
+      price('AAAA3', d, a);
+      price('BBBB3', d, b);
+    }
+    // ETF de referência cadastrado como faz o importador; DIVO11 só tem cotação a partir de 03/11.
+    const etf = db.prepare("INSERT INTO assets (ticker, asset_class, kind) VALUES (?, 'etf', 'ETF')");
+    etf.run('BOVA11');
+    etf.run('DIVO11');
+    for (const [d, v] of [['2026-11-02', 100], ['2026-11-05', 105]] as const) price('BOVA11', d, v);
+    for (const [d, v] of [['2026-11-03', 200], ['2026-11-05', 210]] as const) price('DIVO11', d, v);
+
+    const dir = mkdtempSync(join(tmpdir(), 'research-'));
+    mkdirSync(join(dir, 'teses'));
+    mkdirSync(join(dir, 'referencias'));
+    writeFileSync(join(dir, 'teses', 't1.md'), '---\nid: T1\ntitulo: Tese A\nbloco: Renda\nativos: [AAAA3]\nreferencias: [IDIV, casa-x]\n---\n');
+    writeFileSync(join(dir, 'teses', 't2.md'), '---\nid: T2\ntitulo: Tese B\nbloco: Renda\nativos: [BBBB3]\n---\n');
+    writeFileSync(join(dir, 'referencias', 'etf.md'), '---\nid: SMALL\ntitulo: Small (arquivo)\ntipo: serie\nticker: DIVO11\n---\n');
+    writeFileSync(
+      join(dir, 'referencias', 'casa-x.md'),
+      [
+        '---', 'id: casa-x', 'titulo: Carteira da Casa X', 'fonte: Casa X', '---',
+        '| vigência | ativo | peso |', '|---|---|---|',
+        '| 2026-10-01 | AAAA3 | 100 |',
+        '| 2026-11-03 | AAAA3 | 30 |', '| 2026-11-03 | ZZZZ3 | 70% |',
+        '| 2026-12-01 | ZZZZ3 | 100 |', // depois da última coleta: não vale ainda
+      ].join('\n'),
+    );
+    const app2 = buildApp(db, { researchDir: dir });
+    const p = (await app2.inject({ method: 'GET', url: '/api/performance' })).json();
+
+    const t1 = p.groups.find((g: { key: string }) => g.key === 'T1');
+    expect(t1).toMatchObject({ kind: 'tese', block: 'Renda', references: ['IDIV', 'casa-x'] });
+    // Só AAAA3: +10% em 03/11; na coleta de 04/11 a posição dobra (não é ganho); +10% em 05/11.
+    expect(t1.price[1]).toBeCloseTo(10);
+    expect(t1.price[3]).toBeCloseTo((1.1 * 1.1 - 1) * 100);
+    const t2 = p.groups.find((g: { key: string }) => g.key === 'T2');
+    expect(t2.price[1]).toBeCloseTo(10);
+    expect(t2.price[2]).toBeCloseTo(10); // grupamento: congelada, não sobe 9×
+    const block = p.groups.find((g: { key: string }) => g.key === 'bloco:Renda');
+    expect(block.price[1]).toBeCloseTo((1210 / 1100 - 1) * 100); // AAAA3 + BBBB3, sem a LFT
+
+    const ref = (k: string) => p.references.find((r: { key: string }) => r.key === k);
+    expect(ref('IBOV').pct).toBeCloseTo(5);
+    expect(p.series.ibovespa[3]).toBeCloseTo(5); // compatibilidade
+    expect(ref('IDIV')).toMatchObject({ first_date: '2026-11-03', ticker: 'DIVO11' });
+    expect(ref('IDIV').pct).toBeCloseTo(5); // base no primeiro fechamento disponível
+    expect(ref('SMALL')).toMatchObject({ source: 'arquivo', label: 'Small (arquivo)' });
+    expect(ref('SP500').pct).toBeNull(); // sem cotação de IVVB11
+
+    // Active share na última coleta (04/11), com a vigência de 03/11: 30% AAAA3 + 70% ZZZZ3.
+    const r = (await app2.inject({ method: 'GET', url: '/api/references' })).json();
+    const casa = r.compositions[0];
+    expect(casa).toMatchObject({ key: 'casa-x', version: { from: '2026-11-03', assets: 2 }, versions: ['2026-10-01', '2026-11-03', '2026-12-01'] });
+    expect(casa.not_held.map((w: { ticker: string }) => w.ticker)).toEqual(['ZZZZ3']);
+    const row = (k: string) => casa.rows.find((x: { key: string }) => x.key === k);
+    // Tese A é 100% AAAA3: |100−30| + |0−70| = 140 → 70%.
+    expect(row('T1')).toMatchObject({ declared: true });
+    expect(row('T1').active_share_pct).toBeCloseTo(70);
+    expect(row('T2').active_share_pct).toBeCloseTo(100);
+    // Recorte da carteira: ZZZZ3 não está cadastrado; só AAAA3 dá a classe (ações) → AAAA3 2.200 + BBBB3 100.
+    const w = 2200 / 2300;
+    expect(row('_carteira').active_share_pct).toBeCloseTo((Math.abs(w * 100 - 30) + (1 - w) * 100 + 70) / 2);
   });
 });
