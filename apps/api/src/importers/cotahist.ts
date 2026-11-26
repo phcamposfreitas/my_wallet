@@ -19,8 +19,10 @@ import type { FetchFn } from './sgs.ts';
  * - Arquivo sem o trailer está incompleto e é recusado inteiro.
  * - Só o mercado à vista (TPMERC 010). Todos os outros ficam de fora: fracionário (020),
  *   opções (070/080) e seus exercícios (012/013), termo (030), 021 etc.
- * - Só tickers cadastrados em assets, mais BOVA11 e XFIX11 (aproximações de Ibovespa
- *   e IFIX), cadastrados como ETF na primeira importação se ainda não existirem.
+ * - Só tickers cadastrados em assets, mais os de referência: BOVA11 e XFIX11 (aproximações
+ *   de Ibovespa e IFIX) e os que o chamador pedir em `extraTickers` (ETFs de referência e
+ *   ativos das carteiras de composição, ver references.ts). Os que ainda não existem são
+ *   cadastrados na primeira importação, com a classe pelo código BDI do arquivo.
  * - Grava o fechamento (PREULT) por unidade: preço ÷ fator de cotação (FATCOT,
  *   1 = cotação unitária, 100 ou 1000 = por lote). Se a divisão deixar fração de
  *   centavo (ex.: direito de subscrição a R$ 0,11 por lote de 100), a cotação é
@@ -291,22 +293,27 @@ async function scan(path: string, wanted: Set<string>, report: CotahistReport): 
   return [...quotes.values()].sort((a, b) => a.ticker.localeCompare(b.ticker) || a.date.localeCompare(b.date));
 }
 
-/** BOVA11/XFIX11 ainda não cadastrados: entram como ETF, com nome e ISIN do próprio arquivo. */
+/** Classe pelo código BDI: 02 lote padrão (ações), 12 FII, 14 ETF/fundos de índice. BOVA11/XFIX11 são sempre ETF. */
+const CLASS_BY_BDI: Record<string, [string, string | null]> = { '02': ['acao', null], '12': ['fii', 'FII'], '14': ['etf', 'ETF'] };
+
+/** Referência ainda não cadastrada: entra com nome e ISIN do próprio arquivo. */
 function createBenchmarkAsset(db: DB, q: CotahistQuote): number {
   const isinFree = q.isin !== '' && !db.prepare('SELECT 1 FROM assets WHERE isin = ?').get(q.isin);
+  const benchmark = (Object.values(BENCHMARK_TICKERS) as string[]).includes(q.ticker);
+  const [assetClass, kind] = benchmark ? ['etf', 'ETF'] : (CLASS_BY_BDI[q.codbdi] ?? ['outro', null]);
   return Number(
     db
-      .prepare("INSERT INTO assets (ticker, name, isin, isin_source, asset_class, kind) VALUES (?, ?, ?, ?, 'etf', 'ETF')")
-      .run(q.ticker, q.name || null, isinFree ? q.isin : null, isinFree ? PRICE_SOURCE : null).lastInsertRowid,
+      .prepare('INSERT INTO assets (ticker, name, isin, isin_source, asset_class, kind) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(q.ticker, q.name || null, isinFree ? q.isin : null, isinFree ? PRICE_SOURCE : null, assetClass, kind ?? q.spec ?? null).lastInsertRowid,
   );
 }
 
-export async function importCotahist(db: DB, path: string): Promise<CotahistReport> {
+export async function importCotahist(db: DB, path: string, opts: { extraTickers?: string[] } = {}): Promise<CotahistReport> {
   const report = emptyReport(basename(path));
   try {
     const assets = db.prepare('SELECT id, ticker, asset_class FROM assets').all() as { id: number; ticker: string; asset_class: string }[];
     const idByTicker = new Map(assets.map((a) => [a.ticker.trim().toUpperCase(), a.id]));
-    const benchmarks: string[] = Object.values(BENCHMARK_TICKERS);
+    const benchmarks: string[] = [...Object.values(BENCHMARK_TICKERS), ...(opts.extraTickers ?? []).map((t) => t.trim().toUpperCase())];
     const quotes = await scan(path, new Set([...idByTicker.keys(), ...benchmarks]), report);
 
     if (quotes.length) {

@@ -1,14 +1,15 @@
 /**
  * Uso: npm run import:cotahist -w apps/api -- <COTAHIST_D12112026.ZIP | .TXT | pasta> [...]
- * Grava em prices o fechamento dos tickers cadastrados em assets, mais BOVA11 e XFIX11
- * (aproximações de Ibovespa e IFIX). Aceita o arquivo diário, mensal ou anual da B3.
+ * Grava em prices o fechamento dos tickers cadastrados em assets, mais os de referência
+ * (BOVA11, XFIX11, os ETFs de references.ts e os ativos de research/referencias/). Aceita o arquivo diário, mensal ou anual da B3.
  * O arquivo vem de `npm run download:cotahist` ou do site da B3; nada é baixado aqui.
  */
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { openDb } from '../db.ts';
 import { dbPathOrExit } from '../db-path.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
+import { referenceTickers } from '../references.ts';
 
 const args = process.argv.slice(2);
 if (!args.length) {
@@ -33,9 +34,10 @@ const dbPath = dbPathOrExit();
 const db = openDb(dbPath);
 console.log(`Banco: ${dbPath}`);
 
+const extraTickers = referenceTickers(join(dirname(dbPath), 'research'));
 const reports: CotahistReport[] = [];
 for (const f of files) {
-  const r = await importCotahist(db, f);
+  const r = await importCotahist(db, f, { extraTickers });
   reports.push(r);
   if (r.status === 'erro') {
     console.log(`\n[erro] ${r.file}: ${r.error}`);

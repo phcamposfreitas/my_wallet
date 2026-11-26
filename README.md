@@ -50,6 +50,8 @@ apps/api   Fastify + node:sqlite + zod
   src/importers/sgs.ts  séries do Banco Central (CDI, Selic, IPCA, dólar)
   src/importers/cotahist.ts  cotações de fechamento da B3 (COTAHIST)
   src/benchmarks.ts     CDI acumulado e variação de Ibovespa/IFIX num período
+  src/price-index.ts    índice diário encadeado entre coletas (carteira, teses, blocos)
+  src/references.ts     carteiras de referência: séries (CDI, ETFs) e composições
   src/routes/market.ts  séries, cotações e comparativo
 apps/web   React 19 + Vite + React Router + TanStack Query
 ```
@@ -83,8 +85,11 @@ Reimportar não duplica: valor igual fica como está e valor revisado pela fonte
 
 **Cotações da B3** (tabela `prices`, fechamento em centavos por unidade). O importador lê
 um COTAHIST já baixado (diário, mensal ou anual, todos com o mesmo layout) e grava só o
-mercado à vista dos tickers cadastrados em ativos, mais **BOVA11** e **XFIX11**, usados
-como aproximação de Ibovespa e IFIX (cadastrados como ETF na primeira importação). Ficam
+mercado à vista dos tickers cadastrados em ativos, mais os de referência: **BOVA11** e
+**XFIX11** (aproximação de Ibovespa e IFIX), os demais ETFs do catálogo e os ativos das
+carteiras de `research/referencias/` (ver
+[docs/investimentos/referencias.md](docs/investimentos/referencias.md)). Os que faltam são
+cadastrados na primeira importação. Ficam
 de fora o fracionário e as opções, e o fator de cotação é aplicado. As cotações são as do
 pregão, sem ajuste por proventos ou eventos corporativos.
 
@@ -106,6 +111,7 @@ POST /api/series/import   {"from", "to", "codes"}, todos opcionais → 200, ou 5
 GET  /api/prices?ticker=PETR4,BOVA11&from=2026-11-01&to=2026-11-12
 POST /api/prices/import   {"path": "/caminho/COTAHIST_D12112026.ZIP"} (arquivo ou pasta) → 200 ou 422
 GET  /api/benchmarks?from=2026-10-05&to=2026-11-12   (to padrão: hoje)
+GET  /api/references                          → séries de referência e sobreposição com as composições
 ```
 
 `/api/benchmarks` devolve o **CDI acumulado** no período, o produto de (1 + taxa diária)

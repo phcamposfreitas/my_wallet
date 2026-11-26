@@ -227,3 +227,8 @@ td.flag-sem { color: var(--neg); }
 /* Link com aparência de botão */
 a.button-link { display: inline-block; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); text-decoration: none; }
 a.button-link:hover { border-color: var(--accent); color: var(--accent); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+.chip.on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+tr.muted-row td { background: color-mix(in srgb, var(--accent-soft) 40%, transparent); }

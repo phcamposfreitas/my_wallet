@@ -151,6 +151,13 @@ describe('importação do COTAHIST', () => {
     });
   });
 
+  it('grava também os tickers de referência pedidos, com a classe pelo código BDI', async () => {
+    const r = await importCotahist(db, writeZip('COTAHIST_D12112026.ZIP', QUOTES), { extraTickers: ['zzzz3'] });
+    expect(r.created_assets).toEqual(['BOVA11', 'XFIX11', 'ZZZZ3']);
+    expect(prices().ZZZZ3.price_cents).toBe(777);
+    expect(db.prepare("SELECT asset_class, kind FROM assets WHERE ticker = 'ZZZZ3'").get()).toEqual({ asset_class: 'acao', kind: 'ON' });
+  });
+
   it('é idempotente e corrige uma cotação reenviada', async () => {
     const path = writeZip('COTAHIST_D12112026.ZIP', QUOTES);
     await importCotahist(db, path);

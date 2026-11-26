@@ -43,7 +43,7 @@ export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn; rese
       statementRoutes(api, db);
       ruleRoutes(api, db);
       planRoutes(api, db);
-      marketRoutes(api, db, { fetch: opts.fetch });
+      marketRoutes(api, db, { fetch: opts.fetch, researchDir: opts.researchDir });
       thesisRoutes(api, db, { researchDir: opts.researchDir });
 
       // Visão geral: saldo das contas do dia a dia que entram no patrimônio + corretora (último snapshot)

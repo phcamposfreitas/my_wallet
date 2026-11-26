@@ -524,6 +524,8 @@ export interface Performance {
   snapshots: string[];
   dates: string[];
   series: Record<'price' | 'total' | 'cdi' | 'ibovespa' | 'ifix', (number | null)[]>;
+  references: PerformanceReference[];
+  groups: PerformanceGroup[];
   summary: {
     price_pct: number | null;
     total_pct: number | null;
@@ -550,6 +552,60 @@ export interface Performance {
     }[];
     without_quote: string[];
   };
+}
+
+export interface PerformanceReference {
+  key: string;
+  label: string;
+  ticker: string | null;
+  note: string;
+  source: 'embutida' | 'arquivo';
+  values: (number | null)[];
+  pct: number | null;
+  first_date: string | null;
+}
+
+export interface PerformanceGroup {
+  key: string;
+  label: string;
+  kind: 'tese' | 'bloco';
+  block: string | null;
+  references: string[];
+  price: (number | null)[];
+  total: (number | null)[];
+  summary: {
+    price_pct: number | null;
+    total_pct: number | null;
+    max_drawdown: { pct: number; peak_date: string; trough_date: string };
+    unpriced_pct: number;
+    first_date: string | null;
+  };
+}
+
+export interface References {
+  as_of: string | null;
+  series: { key: string; label: string; ticker: string | null; note: string; source: string }[];
+  compositions: {
+    key: string;
+    label: string;
+    source_name: string | null;
+    url: string | null;
+    file: string;
+    version: { from: string; assets: number; weights: { ticker: string; weight_pct: number }[] } | null;
+    versions: string[];
+    classes: string[];
+    not_held: { ticker: string; weight_pct: number }[];
+    warnings: string[];
+    rows: {
+      key: string;
+      label: string;
+      kind: 'carteira' | 'tese' | 'bloco';
+      declared: boolean;
+      active_share_pct: number | null;
+      common: { ticker: string; group_pct: number; ref_pct: number }[];
+    }[];
+  }[];
+  warnings: string[];
 }
 
 export interface ThesesMap {

@@ -8,6 +8,7 @@ import { isIsoDate, localToday } from '../dates.ts';
 import { computeBenchmarks } from '../benchmarks.ts';
 import { findSeries, importSeries, SGS_SERIES, type FetchFn } from '../importers/sgs.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
+import { buildReferences, referenceTickers } from '../references.ts';
 
 /**
  * Dados de mercado: séries do Banco Central (tabela series) e fechamentos da B3
@@ -31,7 +32,7 @@ function filters(column: { key: string; date: string }, q: { key?: string[]; fro
   return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', args };
 }
 
-export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: FetchFn } = {}) {
+export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: FetchFn; researchDir?: string } = {}) {
   // --- Séries do Banco Central ---------------------------------------------------
   app.get('/series', async (req) => {
     const q = z.object({ code: list.optional(), from: date.optional(), to: date.optional() }).parse(req.query);
@@ -81,7 +82,8 @@ export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: Fetch
     const files = cotahistFiles(full);
     if (!files.length) return reply.code(400).send({ error: 'Nenhum arquivo COTAHIST_*.ZIP ou .TXT na pasta' });
     const results: CotahistReport[] = [];
-    for (const file of files) results.push(await importCotahist(db, file));
+    const extraTickers = referenceTickers(opts.researchDir);
+    for (const file of files) results.push(await importCotahist(db, file, { extraTickers }));
     const ok = results.every((r) => r.status === 'importado');
     return reply.code(ok ? 200 : 422).send({ ok, results });
   });
@@ -94,4 +96,7 @@ export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: Fetch
     if (q.from > to) return reply.code(400).send({ error: 'from deve ser anterior ou igual a to' });
     return computeBenchmarks(db, q.from, to);
   });
+
+  /** Carteiras de referência: séries disponíveis e sobreposição (active share) com as de composição. */
+  app.get('/references', async () => buildReferences(db, opts.researchDir));
 }

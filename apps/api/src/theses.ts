@@ -21,6 +21,8 @@ export interface ThesisFile {
   last_review: string | null;
   next_review: string | null;
   origin: string | null;
+  /** Referências com que a tese se compara (campo `referencias`): chaves de séries ou de carteiras de composição. */
+  references: string[];
   file: string;
   body: string;
 }
@@ -62,6 +64,7 @@ export function readTheses(dir: string | undefined): ThesisFile[] {
       last_review: str('ultima_revisao'),
       next_review: str('proxima_revisao'),
       origin: str('origem'),
+      references: Array.isArray(meta.referencias) ? meta.referencias : typeof meta.referencias === 'string' && meta.referencias ? [meta.referencias] : [],
       file,
       body,
     });
