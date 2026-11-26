@@ -10,7 +10,10 @@
     "import:xp": "tsx src/cli/import-xp.ts",
     "import:series": "tsx src/cli/import-series.ts",
     "import:cotahist": "tsx src/cli/import-cotahist.ts",
-    "download:cotahist": "tsx src/cli/download-cotahist.ts"
+    "download:cotahist": "tsx src/cli/download-cotahist.ts",
+    "import:proventos": "tsx src/cli/import-proventos.ts",
+    "import:tesouro": "tsx src/cli/import-tesouro.ts",
+    "import:fundos": "tsx src/cli/import-fundos.ts"
   },
   "dependencies": {
     "fastify": "^5.2.0",

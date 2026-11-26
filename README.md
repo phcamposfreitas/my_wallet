@@ -52,6 +52,8 @@ apps/api   Fastify + node:sqlite + zod
   src/benchmarks.ts     CDI acumulado e variação de Ibovespa/IFIX num período
   src/price-index.ts    índice diário encadeado entre coletas (carteira, teses, blocos)
   src/references.ts     carteiras de referência: séries (CDI, ETFs) e composições
+  src/stats.ts          volatilidade, beta, correlação e tracking error contra uma referência
+  src/importers/b3-proventos.ts, tesouro.ts, cvm-fundos.ts  proventos, Tesouro e fundos
   src/routes/market.ts  séries, cotações e comparativo
 apps/web   React 19 + Vite + React Router + TanStack Query
 ```
@@ -112,6 +114,10 @@ GET  /api/prices?ticker=PETR4,BOVA11&from=2026-11-01&to=2026-11-12
 POST /api/prices/import   {"path": "/caminho/COTAHIST_D12112026.ZIP"} (arquivo ou pasta) → 200 ou 422
 GET  /api/benchmarks?from=2026-10-05&to=2026-11-12   (to padrão: hoje)
 GET  /api/references                          → séries de referência e sobreposição com as composições
+GET  /api/market-income?ticker=PETR4          → proventos anunciados (B3) por data-com
+POST /api/market-income/import {"since","tickers"}   proventos da B3 (ações e units)
+POST /api/tesouro/import {"since"}            PU base do Tesouro Direto (Tesouro Transparente)
+POST /api/funds/import {"months"}             cotas dos fundos com CNPJ (informe diário da CVM)
 ```
 
 `/api/benchmarks` devolve o **CDI acumulado** no período, o produto de (1 + taxa diária)

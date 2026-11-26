@@ -43,7 +43,16 @@ export interface MarketData {
   /** Proventos pagos (sem amortização), por data e por ativo. */
   incomeOn(date: string): Map<number, number> | undefined;
   assetId(ticker: string): number | undefined;
+  /**
+   * Proventos de mercado do ativo, líquidos, em centavos por unidade, pela data-com. Fonte:
+   * market_income (B3); sem nenhum registro lá, o valor por cota do extrato, pela data de
+   * pagamento (aproximação: é o caso dos FIIs, que a B3 não publica nessa API).
+   */
+  incomeEvents(assetId: number): { date_with: string; cents: number }[];
 }
+
+/** JCP é anunciado bruto; o cotista recebe com 15% de IR retido. */
+const JCP_NET = 0.85;
 
 export function loadMarketData(db: DB): MarketData {
   const priceRows = db.prepare('SELECT asset_id, date, price_cents FROM prices ORDER BY date').all() as { asset_id: number; date: string; price_cents: number }[];
@@ -77,6 +86,28 @@ export function loadMarketData(db: DB): MarketData {
   );
   const holdings = new Map<number, Holding[]>();
   const ids = new Map((db.prepare('SELECT id, ticker FROM assets').all() as { id: number; ticker: string }[]).map((a) => [a.ticker, a.id]));
+  const events = new Map<number, { date_with: string; cents: number }[]>();
+  for (const r of db.prepare('SELECT asset_id, last_date_with, type, value_per_unit FROM market_income ORDER BY last_date_with').all() as {
+    asset_id: number;
+    last_date_with: string;
+    type: string;
+    value_per_unit: number;
+  }[]) {
+    if (!events.has(r.asset_id)) events.set(r.asset_id, []);
+    events.get(r.asset_id)!.push({ date_with: r.last_date_with, cents: r.value_per_unit * 100 * (r.type === 'jcp' ? JCP_NET : 1) });
+  }
+  const fromStatement = new Map<number, { date_with: string; cents: number }[]>();
+  for (const r of db
+    .prepare(
+      `SELECT asset_id, COALESCE(ex_date, date) AS d, SUM(value_per_unit) AS v FROM asset_income
+       WHERE type IN ('dividendo','jcp','rendimento_fii','rendimento_fundo') AND value_per_unit > 0
+       GROUP BY asset_id, d, type ORDER BY d`,
+    )
+    .all() as { asset_id: number; d: string; v: number }[]) {
+    if (events.has(r.asset_id)) continue;
+    if (!fromStatement.has(r.asset_id)) fromStatement.set(r.asset_id, []);
+    fromStatement.get(r.asset_id)!.push({ date_with: r.d, cents: r.v * 100 });
+  }
   return {
     sessions: [...new Set(priceRows.map((r) => r.date))],
     closeAt,
@@ -90,6 +121,7 @@ export function loadMarketData(db: DB): MarketData {
     },
     incomeOn: (d) => income.get(d),
     assetId: (t) => ids.get(t),
+    incomeEvents: (id) => events.get(id) ?? fromStatement.get(id) ?? [],
   };
 }
 
@@ -125,9 +157,11 @@ export function chainedIndex(md: MarketData, snaps: Snapshot[], axis: string[], 
     const start = snaps[k].date;
     const end = snaps[k + 1]?.date ?? last;
     const holdings = md.holdingsOf(snaps[k].id).filter((h) => !keep || keep.has(h.asset_id));
+    // Sem quantidade (fundos), mas com cota diária: a quantidade implícita é valor ÷ cota.
     const priced = holdings.flatMap((h) => {
-      const c = h.quantity !== null ? md.closeAt(h.asset_id, start) : null;
-      return c && dayDiff(c.date, start) <= STALE_DAYS ? [{ ...h, quantity: h.quantity!, last: c.price, frozen: null as number | null }] : [];
+      const c = md.closeAt(h.asset_id, start);
+      if (!c || dayDiff(c.date, start) > STALE_DAYS || (h.quantity === null && !(h.value_cents > 0))) return [];
+      return [{ ...h, quantity: h.quantity ?? h.value_cents / c.price, last: c.price, frozen: null as number | null }];
     });
     const pricedIds = new Set(priced.map((p) => p.asset_id));
     const flat = holdings.filter((h) => !pricedIds.has(h.asset_id));
@@ -188,6 +222,30 @@ export function assetIndex(md: MarketData, assetId: number | undefined, axis: st
   return closes.map((c) => (c === null || !base ? null : c / base));
 }
 
+/**
+ * Retorno total de um ativo cotado: o provento com data-com entre dois pregões é somado ao
+ * preço do pregão seguinte (reinvestido no fechamento). Sem proventos, é igual a assetIndex.
+ */
+export function assetTotalIndex(md: MarketData, assetId: number | undefined, axis: string[]): (number | null)[] {
+  if (assetId === undefined) return axis.map(() => null);
+  const events = md.incomeEvents(assetId);
+  if (!events.length) return assetIndex(md, assetId, axis);
+  let level: number | null = null;
+  let prev: { day: string; price: number } | null = null;
+  return axis.map((d) => {
+    const c = md.closeAt(assetId, d);
+    if (!c) return null;
+    if (!prev) {
+      level = 1;
+    } else if (c.price / prev.price <= EVENT_RATIO && prev.price / c.price <= EVENT_RATIO) {
+      const paid = events.filter((e) => e.date_with >= prev!.day && e.date_with < d).reduce((s, e) => s + e.cents, 0);
+      level = level! * ((c.price + paid) / prev.price);
+    }
+    prev = { day: d, price: c.price };
+    return level;
+  });
+}
+
 /** CDI acumulado no eixo: a taxa de um dia rende até o dia útil seguinte. */
 export function cdiIndex(db: DB, axis: string[]): (number | null)[] {
   const rows = db.prepare("SELECT date, value FROM series WHERE code = 'CDI' AND date >= ? ORDER BY date").all(axis[0]) as { date: string; value: number }[];
@@ -245,7 +303,7 @@ export interface WeightsIndex {
  * data fica de fora e o peso dele é redistribuído entre os demais. Vigência anterior ao eixo vale
  * desde o início do eixo (a mais recente delas).
  */
-export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: string[]): WeightsIndex {
+export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: string[], opts: { reinvest?: boolean } = {}): WeightsIndex {
   const values: (number | null)[] = axis.map(() => null);
   const rebalances: WeightsIndex['rebalances'] = [];
   const starts = new Map<number, WeightVersion>(); // posição no eixo -> vigência
@@ -254,7 +312,7 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
     if (i >= 0) starts.set(i, v); // a mais recente que cai no mesmo pregão vence
   }
   const order = [...starts.keys()].sort((a, b) => a - b);
-  let holdings: { id: number; q: number; last: number; frozen: number | null }[] = [];
+  let holdings: { id: number; q: number; last: number; lastDay: string; frozen: number | null }[] = [];
   let level = 1;
 
   const mark = (day: string) => {
@@ -263,8 +321,16 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
       if (h.frozen === null) {
         const px = md.closeAt(h.id, day)!.price;
         if (px / h.last > EVENT_RATIO || h.last / px > EVENT_RATIO) h.frozen = h.q * h.last;
-        else h.last = px;
+        else {
+          // Com reinvestimento: provento com data-com entre o pregão anterior e este é recomprado no fechamento de hoje.
+          if (opts.reinvest) {
+            const paid = md.incomeEvents(h.id).reduce((sum, e) => (e.date_with >= h.lastDay && e.date_with < day ? sum + e.cents : sum), 0);
+            h.q += (h.q * paid) / px;
+          }
+          h.last = px;
+        }
       }
+      h.lastDay = day;
       v += h.frozen ?? h.q * h.last;
     }
     return v;
@@ -293,7 +359,7 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
       holdings = [];
       continue;
     }
-    holdings = priced.map((p) => ({ id: p.id, q: (level * p.w) / pricedW / p.price, last: p.price, frozen: null }));
+    holdings = priced.map((p) => ({ id: p.id, q: (level * p.w) / pricedW / p.price, last: p.price, lastDay: day, frozen: null }));
     values[start] = level;
     for (let i = start + 1; i < end; i++) values[i] = mark(axis[i]);
     level = values[end - 1] ?? level;
