@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { api, type Performance, type References } from '../../lib/api';
+import { api, type Performance, type References, type RiskRow } from '../../lib/api';
 import { date, money, pct, signClass } from '../../lib/format';
 import { Kpi, Loading } from '../../components/ui';
 import LineChart from '../../components/LineChart';
@@ -13,7 +13,7 @@ const PERIODS = [
 ] as const;
 
 /** Cores fixas das referências embutidas; as dos arquivos e as teses usam a paleta. */
-const REF_COLOR: Record<string, string> = { CDI: '#59a14f', IBOV: '#f28e2b', IFIX: '#b07aa1', IDIV: '#e15759', SMLL: '#76b7b2', SP500: '#9c755f', IMAB: '#edc948' };
+const REF_COLOR: Record<string, string> = { CDI: '#59a14f', IBOV: '#f28e2b', IFIX: '#b07aa1', IDIV: '#e15759', SMLL: '#76b7b2', SP500: '#9c755f' };
 const PALETTE = ['#4e79a7', '#e15759', '#76b7b2', '#9c755f', '#edc948', '#ff9da7', '#bab0ac', '#8cd17d'];
 const DEFAULT_REFS = ['CDI', 'IBOV', 'IFIX'];
 
@@ -38,8 +38,9 @@ export default function PerformanceTab() {
   const refsQuery = useQuery({ queryKey: ['references'], queryFn: () => api.get<References>('/references') });
   const days = PERIODS.find((p) => p.key === period)!.days;
   const { data, error } = useQuery({
-    queryKey: ['performance', period],
-    queryFn: () => api.get<Performance>(`/performance${days ? `?from=${daysAgo(days)}` : ''}`),
+    queryKey: ['performance', period, compareKey],
+    queryFn: () => api.get<Performance>(`/performance?compare=${encodeURIComponent(compareKey)}${days ? `&from=${daysAgo(days)}` : ''}`),
+    placeholderData: (prev) => prev,
   });
   if (!data) return <Loading error={error} />;
   if (!data.available) {
@@ -119,7 +120,8 @@ export default function PerformanceTab() {
         <h2 style={{ marginBottom: 4 }}>Referências no período</h2>
         <p className="small muted" style={{ margin: '0 0 8px' }}>
           A diferença compara a carteira com proventos com cada referência na mesma janela. Referência cotada só depois do início conta a partir do
-          primeiro fechamento.
+          primeiro fechamento. As carteiras de composição são simuladas só pelo preço: compram os pesos no fechamento do primeiro pregão a partir da
+          publicação e seguram até a vigência seguinte.
         </p>
         <div className="table-wrap">
           <table>
@@ -143,7 +145,18 @@ export default function PerformanceTab() {
                     </td>
                     <td className="small muted">
                       {r.note}
-                      {r.source === 'arquivo' && <span className="badge" style={{ marginLeft: 6 }}>arquivo</span>}
+                      {r.kind === 'composicao' ? (
+                        <span className="badge accent" style={{ marginLeft: 6 }}>simulada</span>
+                      ) : (
+                        r.source === 'arquivo' && <span className="badge" style={{ marginLeft: 6 }}>arquivo</span>
+                      )}
+                      {r.rebalances
+                        ?.filter((b) => b.priced_pct < 99.5 && b.on >= data.from)
+                        .map((b) => (
+                          <div key={b.on} style={{ color: 'var(--warn)' }}>
+                            {date(b.on)}: {pct(b.priced_pct, 0, false)} do peso com cotação; sem: {b.missing.join(', ')}
+                          </div>
+                        ))}
                     </td>
                     <td className={`num ${signClass(r.pct)}`}>{r.pct === null ? <span className="muted">sem cotação</span> : pct(r.pct, 1)}</td>
                     <td className={`num ${signClass(mine !== null && r.pct !== null ? mine - r.pct : null)}`}>
@@ -239,6 +252,8 @@ export default function PerformanceTab() {
           </div>
         </div>
       )}
+
+      <Risk rows={data.stats.rows} compare={data.stats.compare} compareKey={compareKey} setCompareKey={setCompareKey} options={refs} />
 
       <Overlap data={refsQuery.data} />
 
@@ -372,6 +387,80 @@ function Overlap({ data }: { data: References | undefined }) {
       {data.warnings.map((w) => (
         <p key={w} className="small" style={{ margin: '4px 0 0', color: 'var(--warn)' }}>{w}</p>
       ))}
+    </div>
+  );
+}
+
+const num2 = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const KIND_LABEL: Record<RiskRow['kind'], string> = { carteira: 'Carteira', tese: 'Teses', bloco: 'Blocos', referencia: 'Outras referências' };
+
+/** Volatilidade, beta, correlação, tracking error e meses acima da referência escolhida. */
+function Risk({
+  rows,
+  compare,
+  compareKey,
+  setCompareKey,
+  options,
+}: {
+  rows: RiskRow[];
+  compare: { key: string; label: string } | null;
+  compareKey: string;
+  setCompareKey: (k: string) => void;
+  options: { key: string; label: string }[];
+}) {
+  const kinds = (['carteira', 'tese', 'bloco', 'referencia'] as const).filter((k) => rows.some((r) => r.kind === k));
+  return (
+    <div className="card">
+      <div className="page-head" style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0 }}>Risco contra {compare?.label ?? 'a referência'}</h2>
+        <label className="small">
+          Referência{' '}
+          <select value={compareKey} onChange={(e) => setCompareKey(e.target.value)}>
+            {options.map((r) => (
+              <option key={r.key} value={r.key}>{r.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="small muted" style={{ margin: '0 0 8px' }}>
+        Pelos retornos diários do período, anualizados. Beta 1 anda junto com a referência; tracking error é o quanto a diferença de retorno oscila. O que
+        não tem cotação diária anda de uma vez na data da coleta e infla esses números; com poucos meses, leia como indicação. Precisa de 10 pregões.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th className="num">Volatilidade</th>
+              <th className="num">Beta</th>
+              <th className="num">Correlação</th>
+              <th className="num">Tracking error</th>
+              <th className="num">Meses acima</th>
+            </tr>
+          </thead>
+          {kinds.map((k) => (
+            <tbody key={k}>
+              {k !== 'carteira' && (
+                <tr>
+                  <td colSpan={6} className="small muted" style={{ paddingTop: 12 }}><strong>{KIND_LABEL[k]}</strong></td>
+                </tr>
+              )}
+              {rows
+                .filter((r) => r.kind === k && r.days > 0)
+                .map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.kind === 'tese' ? <Link to={`/carteira/teses/${r.key}`}>{r.key} {r.label}</Link> : r.kind === 'carteira' ? <strong>{r.label}</strong> : r.label}</td>
+                    <td className="num">{pct(r.vol_pct, 1, false)}</td>
+                    <td className="num">{num2(r.beta)}</td>
+                    <td className="num">{num2(r.correlation)}</td>
+                    <td className="num">{pct(r.tracking_error_pct, 1, false)}</td>
+                    <td className="num">{r.months ? `${r.months_beat} de ${r.months}` : '—'}</td>
+                  </tr>
+                ))}
+            </tbody>
+          ))}
+        </table>
+      </div>
     </div>
   );
 }
