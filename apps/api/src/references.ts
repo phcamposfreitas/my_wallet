@@ -6,9 +6,10 @@ import { buildTheses, parseFrontMatter } from './theses.ts';
 /**
  * Carteiras de referência: contra o que a carteira, as teses e os blocos são comparados.
  *
- * Dois tipos:
+ * Três tipos:
  * - `serie`: uma série de preço pronta (CDI ou um ETF negociado na B3). Vira índice diário
  *   no mesmo eixo da carteira (ver performance.ts).
+ * - `fundo`: a cota diária de um fundo pelo informe da CVM (campo `cnpj`).
  * - `composicao`: uma lista de ativos com peso e data de vigência, como as carteiras
  *   recomendadas das casas ou a carteira teórica de um índice. É simulada dia a dia pelo motor
  *   de índice (weightsIndex em price-index.ts) e serve também para a sobreposição (active share).
@@ -88,8 +89,14 @@ export function readReferenceFiles(dir: string | undefined) {
       else series.push({ key: id, label, ticker, note: str('fonte') ?? `pelo ticker ${ticker}`, source: 'arquivo' });
       continue;
     }
+    if (tipo === 'fundo') {
+      const cnpj = (str('cnpj') ?? '').replace(/\D/g, '');
+      if (cnpj.length !== 14) warnings.push(`${file}: tipo fundo sem CNPJ de 14 dígitos; ignorado`);
+      else series.push({ key: id, label, ticker: fundTicker(cnpj), note: str('fonte') ?? `cota da CVM, CNPJ ${cnpj}`, source: 'arquivo' });
+      continue;
+    }
     if (tipo !== 'composicao') {
-      warnings.push(`${file}: tipo "${tipo}" desconhecido (use serie ou composicao); ignorado`);
+      warnings.push(`${file}: tipo "${tipo}" desconhecido (use serie, fundo ou composicao); ignorado`);
       continue;
     }
     compositions.push({ key: id, label, source_name: str('fonte'), url: str('url'), file, ...parseWeights(file, body) });
@@ -129,12 +136,21 @@ export function parseWeights(file: string, body: string) {
   return { versions, warnings };
 }
 
+/** Ticker do ativo criado para um fundo de referência: o CNPJ, já que fundo não tem código de bolsa. */
+export const fundTicker = (cnpj: string) => `CVM:${cnpj}`;
+
+/** Fundos de referência (tipo fundo), para o importador da CVM cadastrar os que faltam. */
+export function referenceFunds(researchDir: string | undefined) {
+  const files = readReferenceFiles(researchDir ? join(researchDir, 'referencias') : undefined);
+  return files.series.filter((s) => s.ticker?.startsWith('CVM:')).map((s) => ({ ticker: s.ticker!, cnpj: s.ticker!.slice(4), name: s.label }));
+}
+
 /** Tickers que precisam de cotação diária por causa das referências (para o importador do COTAHIST). */
 export function referenceTickers(researchDir: string | undefined): string[] {
   const files = readReferenceFiles(researchDir ? join(researchDir, 'referencias') : undefined);
   const out = new Set<string>();
-  for (const r of [...BUILTIN_REFERENCES, ...files.series]) if (r.ticker) out.add(r.ticker);
-  for (const c of files.compositions) for (const v of c.versions) for (const w of v.weights) out.add(w.ticker);
+  for (const r of [...BUILTIN_REFERENCES, ...files.series]) if (r.ticker && !r.ticker.startsWith('CVM:')) out.add(r.ticker);
+  for (const c of files.compositions) for (const v of c.versions) for (const w of v.weights) if (w.ticker !== 'CDI') out.add(w.ticker); // CDI = caixa
   return [...out].sort();
 }
 

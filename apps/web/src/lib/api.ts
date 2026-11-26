@@ -101,6 +101,7 @@ export interface Position {
   cost_cents: number | null;
   broker_return_pct: number | null;
   maturity_date: string | null;
+  cnpj?: string | null;
   income_cents: number;
   price_return_pct: number | null;
   total_return_pct: number | null;
@@ -563,8 +564,13 @@ export interface PerformanceReference {
   source: 'embutida' | 'arquivo';
   kind: 'serie' | 'composicao';
   values: (number | null)[];
+  /** Com proventos reinvestidos (igual a `values` para o CDI e para quem não tem proventos registrados). */
+  total: (number | null)[];
   pct: number | null;
+  total_pct: number | null;
   first_date: string | null;
+  /** Ativos sem nenhum provento registrado: neles o retorno total é só preço. */
+  income_missing: string[];
   /** Só nas composições: cada rebalanceamento simulado e a parte do peso que tinha cotação. */
   rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[] | null;
 }
@@ -634,4 +640,54 @@ export interface ThesesMap {
   stale?: boolean;
   files?: Record<string, string>;
   body?: string;
+}
+
+// --- Carteiras hipotéticas (research/hipoteticas/) ---------------------------------
+export interface HypotheticalRow {
+  key: string;
+  label: string;
+  kind: 'hipotetica' | 'tese' | 'referencia';
+  note: string | null;
+  first_date: string | null;
+  price_pct: number | null;
+  total_pct: number | null;
+  annualized_pct: number | null;
+  max_drawdown: { pct: number; peak_date: string; trough_date: string };
+  days: number;
+  vol_pct: number | null;
+  beta: number | null;
+  correlation: number | null;
+  tracking_error_pct: number | null;
+  months: number;
+  months_beat: number;
+}
+
+export interface ComparisonWindow {
+  from: string;
+  to: string;
+  dates: string[];
+  compare: { key: string; label: string } | null;
+  lines: { key: string; label: string; kind: HypotheticalRow['kind']; price: (number | null)[]; total: (number | null)[] }[];
+  rows: HypotheticalRow[];
+  rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[];
+}
+
+export interface Hypothetical {
+  key: string;
+  label: string;
+  thesis: string | null;
+  references: string[];
+  rebalance: 'nenhum' | 'mensal' | 'trimestral' | 'semestral' | 'anual';
+  file: string;
+  registered_on: string | null;
+  versions: { from: string; assets: number; recorded_on: string | null; applies_on: string | null; state: 'registrada' | 'tardia' | 'alterada' | 'pendente' | 'removida' }[];
+  warnings: string[];
+  forward: ComparisonWindow | { pending: true; starts_on: string } | null;
+  backtest: ComparisonWindow | null;
+}
+
+export interface Hypotheticals {
+  as_of: string;
+  hypotheticals: Hypothetical[];
+  warnings: string[];
 }

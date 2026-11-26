@@ -8,6 +8,7 @@ import { ruleRoutes } from './routes/rules.ts';
 import { planRoutes } from './routes/plan.ts';
 import { marketRoutes } from './routes/market.ts';
 import { thesisRoutes } from './routes/theses.ts';
+import { hypotheticalRoutes } from './routes/hypotheticals.ts';
 import { buildPortfolio } from './snapshots.ts';
 import type { FetchFn } from './importers/sgs.ts';
 
@@ -45,6 +46,7 @@ export function buildApp(db: DB, opts: { logger?: boolean; fetch?: FetchFn; rese
       planRoutes(api, db);
       marketRoutes(api, db, { fetch: opts.fetch, researchDir: opts.researchDir });
       thesisRoutes(api, db, { researchDir: opts.researchDir });
+      hypotheticalRoutes(api, db, { researchDir: opts.researchDir });
 
       // Visão geral: saldo das contas do dia a dia que entram no patrimônio + corretora (último snapshot)
       api.get('/overview', async () => {

@@ -63,6 +63,7 @@ CIO ── sessão principal do Claude Code: conduz os rituais e consolida
 | Nova coleta | quando o titular exporta os CSVs da corretora | `/nova-coleta [pasta]` | controladoria | boletim com conciliação, eventos, proventos e desempenho |
 | Revisão de tese | depois de um 🔴, de resultado trimestral, de fato relevante ou a pedido | `/revisar-tese <tese ou ticker>` | analista da classe + risco-compliance (+ estrategista-macro se o gatilho for macro) | tese atualizada com veredito |
 | Nova referência | quando o titular traz uma carteira recomendada ou a revisão mensal de uma casa | `/nova-referencia <fonte>` | CIO (+ controladoria para cotações) | `referencias/<id>.md` e a comparação com carteira e teses |
+| Nova hipotética | quando o titular quer testar uma ideia de carteira ou de tese antes de montar | `/nova-hipotetica <ideia>` | CIO (+ analista da classe) | `hipoteticas/<id>.md`, registro da vigência e a comparação com a tese real e as referências |
 | Comitê mensal | uma vez por mês, depois da coleta | `/comite-investimentos` | todos | `comite/AAAA-MM.md` com propostas para o titular |
 | Revisão da política | a cada semestre, ou quando a vida do titular mudar | dentro do comitê | CIO + gestor-portfolio + titular | `politica.md` revisada |
 
@@ -82,6 +83,7 @@ checkout e toda worktree enxergam o mesmo banco, e limpar uma worktree não apag
     teses/_mapa.md             carteira por tese e por fator, pendências
     teses/T01-<tema>.md        uma tese por arquivo (modelo abaixo)
     referencias/<id>.md        carteiras de referência (ver referencias.md)
+    hipoteticas/<id>.md        carteiras hipotéticas (ver hipoteticas.md)
     diario/AAAA-MM-DD.md       nota diária do monitor
     comite/AAAA-MM.md          atas do comitê
     coletas/AAAA-MM-DD.md      boletins da controladoria

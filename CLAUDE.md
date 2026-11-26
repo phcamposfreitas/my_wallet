@@ -18,7 +18,7 @@
 - **Investimentos:**
   - equipe de agentes: `.claude/agents/`;
   - rituais: `.claude/skills/` (`/rotina-diaria`, `/nova-coleta`, `/revisar-tese`,
-    `/comite-investimentos`, `/nova-referencia`);
+    `/comite-investimentos`, `/nova-referencia`, `/nova-hipotetica`);
   - regimento: `docs/investimentos/README.md`.
   Os agentes analisam e preparam decisões, mas não operam nem recomendam.
 - **Faturas de cartão:** o fluxo está em `docs/faturas-cartao.md` e `scripts/README.md`. Os PDFs

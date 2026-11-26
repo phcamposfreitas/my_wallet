@@ -8,7 +8,12 @@ import { isIsoDate, localToday } from '../dates.ts';
 import { computeBenchmarks } from '../benchmarks.ts';
 import { findSeries, importSeries, SGS_SERIES, type FetchFn } from '../importers/sgs.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
-import { buildReferences, referenceTickers } from '../references.ts';
+import { buildReferences, referenceFunds, referenceTickers } from '../references.ts';
+import { hypotheticalTickers } from '../hypotheticals.ts';
+import { importMarketIncome } from '../importers/b3-proventos.ts';
+import { importTesouro } from '../importers/tesouro.ts';
+import { downloadCvm, ensureFundAssets, importCvmFile, type CvmReport } from '../importers/cvm-fundos.ts';
+import { dirname, join } from 'node:path';
 
 /**
  * Dados de mercado: séries do Banco Central (tabela series) e fechamentos da B3
@@ -82,7 +87,7 @@ export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: Fetch
     const files = cotahistFiles(full);
     if (!files.length) return reply.code(400).send({ error: 'Nenhum arquivo COTAHIST_*.ZIP ou .TXT na pasta' });
     const results: CotahistReport[] = [];
-    const extraTickers = referenceTickers(opts.researchDir);
+    const extraTickers = [...new Set([...referenceTickers(opts.researchDir), ...hypotheticalTickers(opts.researchDir)])];
     for (const file of files) results.push(await importCotahist(db, file, { extraTickers }));
     const ok = results.every((r) => r.status === 'importado');
     return reply.code(ok ? 200 : 422).send({ ok, results });
@@ -95,6 +100,53 @@ export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: Fetch
     const to = q.to ?? localToday();
     if (q.from > to) return reply.code(400).send({ error: 'from deve ser anterior ou igual a to' });
     return computeBenchmarks(db, q.from, to);
+  });
+
+  // --- Proventos de mercado (B3), Tesouro Direto e fundos (CVM) --------------------
+  app.get('/market-income', async (req) => {
+    const q = z.object({ ticker: list.optional(), from: date.optional() }).parse(req.query);
+    const f = filters({ key: 'a.ticker', date: 'm.last_date_with' }, { key: q.ticker, from: q.from });
+    return db
+      .prepare(`SELECT a.ticker, m.last_date_with, m.type, m.value_per_unit, m.approved_on, m.source FROM market_income m JOIN assets a ON a.id = m.asset_id ${f.sql} ORDER BY a.ticker, m.last_date_with`)
+      .all(...f.args);
+  });
+
+  /** Proventos anunciados na B3 (ações e units). Sem `tickers`, todas as ações cadastradas. */
+  app.post('/market-income/import', async (req, reply) => {
+    const body = z.object({ tickers: z.array(z.string().min(1)).optional(), since: date.optional() }).parse(req.body ?? {});
+    const report = await importMarketIncome(db, { ...body, fetch: opts.fetch });
+    return reply.code(report.ok ? 200 : 502).send(report);
+  });
+
+  /** PU base do Tesouro Direto (Tesouro Transparente) para os títulos cadastrados. */
+  app.post('/tesouro/import', async (req, reply) => {
+    const body = z.object({ since: date.optional() }).parse(req.body ?? {});
+    const report = await importTesouro(db, { since: body.since, fetch: opts.fetch });
+    return reply.code(report.ok ? 200 : 502).send(report);
+  });
+
+  /** Cotas de fundos (CVM) dos meses pedidos; padrão: o mês atual e o anterior. Baixa para cvm/ na pasta de dados. */
+  app.post('/funds/import', async (req, reply) => {
+    const body = z.object({ months: z.array(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)).optional() }).parse(req.body ?? {});
+    if (!opts.researchDir) return reply.code(400).send({ error: 'Pasta de dados desconhecida: sem onde guardar os arquivos da CVM' });
+    const dir = join(dirname(opts.researchDir), 'cvm');
+    const created = ensureFundAssets(db, referenceFunds(opts.researchDir));
+    // Sem fundo com CNPJ não há o que buscar: evita baixar ~12 MB por mês à toa.
+    if (!db.prepare('SELECT 1 FROM assets WHERE cnpj IS NOT NULL').get()) {
+      return { ok: true, created_assets: created, results: [], note: 'nenhum ativo com CNPJ; nada a importar' };
+    }
+    const now = localToday();
+    const prev = new Date(Date.UTC(Number(now.slice(0, 4)), Number(now.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
+    const results: (CvmReport | { file: string; ok: false; error: string })[] = [];
+    for (const m of body.months ?? [prev, now.slice(0, 7)]) {
+      try {
+        results.push(await importCvmFile(db, await downloadCvm(m, dir, opts.fetch)));
+      } catch (e) {
+        results.push({ file: m, ok: false, error: (e as Error).message });
+      }
+    }
+    const ok = results.every((r) => r.ok);
+    return reply.code(ok ? 200 : 502).send({ ok, created_assets: created, results });
   });
 
   /** Carteiras de referência: séries disponíveis e sobreposição (active share) com as de composição. */

@@ -18,6 +18,12 @@ export const assetSchema = z.object({
   issuer: z.string().nullish(),
   maturity_date: date.nullish(),
   pays_cash: z.boolean().default(true),
+  /** Fundos: CNPJ para buscar a cota diária na CVM. Guardado só com os dígitos. */
+  cnpj: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ''))
+    .refine((s) => s.length === 14, 'CNPJ deve ter 14 dígitos')
+    .nullish(),
 });
 
 /** Operações (notas de corretagem). Registro manual; a importação de notas vem depois. */

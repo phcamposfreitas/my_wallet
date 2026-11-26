@@ -9,6 +9,7 @@ comparar, mais adiante, carteiras de casas e teses hipotéticas com a carteira r
 | Tipo | O que é | Uso hoje |
 |---|---|---|
 | `serie` | uma série de preço pronta: o CDI ou um ETF da B3 | linha no gráfico e diferença em p.p. na aba **Desempenho** |
+| `fundo` | a cota diária de um fundo pelo informe da CVM (campo `cnpj`) | como `serie`; serve para comparar com gestores |
 | `composicao` | ativos com peso e data de vigência (carteira recomendada de uma casa, carteira teórica de um índice) | simulada dia a dia como série; sobreposição (active share) com a carteira, as teses e os blocos |
 
 Para cadastrar uma carteira de casa, use o ritual `/nova-referencia`.
@@ -23,8 +24,36 @@ Para cadastrar uma carteira de casa, use o ritual `/nova-referencia`.
   parte do peso que tinha cotação em cada rebalanceamento.
 - Variação de mais de 3× num dia é tratada como grupamento ou desdobramento, como na
   carteira.
-- Só preço, sem custos e sem proventos. O desempenho que a casa divulga costuma incluir
-  proventos, então os números não vão bater com o relatório dela.
+- Duas versões: **só preço** e **com proventos**. Na segunda, o que cada ativo paga é
+  recomprado no fechamento do pregão seguinte à data-com, e o JCP entra com 15% de IR
+  retido. Sem custos de corretagem. A tela lista os ativos sem nenhum provento registrado,
+  que entram só pelo preço.
+
+## Proventos de mercado
+
+Para medir o retorno total das referências, o sistema guarda os proventos anunciados por
+ativo, separados dos que o titular recebeu (`asset_income`, do extrato):
+
+| Fonte | Cobre | Como |
+|---|---|---|
+| B3, API da página de empresas | ações e units (dividendo, JCP, com data-com) | `npm run import:proventos -w apps/api -- --desde AAAA-MM-DD` ou `POST /api/market-income/import` |
+| extrato do titular | FIIs e o que mais a carteira recebeu | automático: valor por cota pela data de pagamento, quando o ativo não tem nada da B3 |
+
+A B3 não publica nessa API os rendimentos de FII, BDR e ETF. Para os FIIs que estão na
+carteira o extrato cobre, com a data de pagamento no lugar da data-com (diferença de poucos
+dias). FII de referência fora da carteira entra só pelo preço.
+
+## Ativos sem cotação na bolsa
+
+- **Tesouro Direto:** `npm run import:tesouro -w apps/api` baixa o arquivo do Tesouro
+  Transparente e grava o PU base dos títulos cadastrados, casando o tipo (LFT, LTN, NTN-B
+  Principal, NTN-B, NTN-F) e o vencimento. Com isso o Tesouro deixa de ficar parado entre
+  coletas.
+- **Fundos:** com o CNPJ no cadastro (`PATCH /api/assets/:id` com `{"cnpj": "..."}`),
+  `npm run import:fundos -w apps/api -- [AAAA-MM ...]` busca a cota diária no informe da CVM.
+  A posição de fundo não tem quantidade: o sistema usa valor ÷ cota na data da coleta.
+
+As três importações rodam também em `scripts/atualizar-mercado.sh`.
 
 ## Risco contra a referência
 
@@ -54,7 +83,8 @@ Não há ETF de IMA-B no COTAHIST de 2026 (IMAB11 e B5P211 não aparecem). Para 
 títulos IPCA+ com um índice, cadastre a série por arquivo (`tipo: serie`) quando houver um
 ticker negociado.
 
-Os ETFs entram **só pelo preço**: o que distribuem não aparece. A cotação deles vem do
+Os ETFs entram **só pelo preço**: a API de proventos da B3 não cobre ETFs, então o que
+distribuem não aparece (a tela marca "só preço"). A cotação deles vem do
 COTAHIST como a dos ativos da carteira. Um ETF passa a ter cotação a partir do primeiro
 arquivo importado depois de entrar na lista. Para ter o histórico, reimporte o arquivo
 mensal ou anual da B3 (`npm run download:cotahist -w apps/api -- 2026`).
@@ -74,6 +104,17 @@ titulo: Ibovespa (BOVV11)
 tipo: serie
 ticker: BOVV11
 fonte: ETF BOVV11
+---
+```
+
+Fundo (a cota vem do informe diário da CVM; o fundo é cadastrado na primeira importação):
+
+```markdown
+---
+id: gestora-acoes
+titulo: Fundo de ações da Gestora Y
+tipo: fundo
+cnpj: 00.000.000/0001-00
 ---
 ```
 
@@ -125,9 +166,8 @@ aparece marcada como "da tese".
 - **Active share:** metade da soma das diferenças de peso. A carteira inteira entra só nas
   classes de ativo que a referência tem: o Tesouro não conta contra uma carteira de ações.
 
-## Próximas fases
+## Carteiras hipotéticas
 
-1. Proventos de mercado por ativo, para ter retorno total dos dois lados; cotas de fundos
-   pelo informe diário da CVM.
-2. Carteiras hipotéticas (teses que ainda não foram montadas), acompanhadas para frente a
-   partir da data de registro, e backtest com aviso de viés.
+Testes de "e se" (uma tese que ainda não existe, outra seleção de ativos, uma mistura com
+caixa) usam o mesmo formato e o mesmo motor, com acompanhamento a partir do registro e
+backtest separado. Ver [hipoteticas.md](hipoteticas.md).

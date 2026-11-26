@@ -314,6 +314,36 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_action_items_open ON action_items(status, due_date);
   `,
+  // v12: proventos de mercado (por ativo, não da conta) e CNPJ de fundos
+  `
+  -- Proventos anunciados por ativo, para o retorno total de referências e carteiras simuladas.
+  -- Os proventos recebidos pelo titular continuam em asset_income (extrato).
+  CREATE TABLE market_income (
+    id INTEGER PRIMARY KEY,
+    asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    last_date_with TEXT NOT NULL,         -- data-com: último pregão com direito
+    type TEXT NOT NULL CHECK (type IN ('dividendo','jcp','rendimento','outro')),
+    value_per_unit REAL NOT NULL,         -- bruto, em reais por unidade (JCP antes do IR)
+    approved_on TEXT,
+    source TEXT NOT NULL,
+    collected_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX idx_market_income_key ON market_income(asset_id, last_date_with, type, value_per_unit, IFNULL(approved_on, ''));
+  -- CNPJ (só dígitos) para casar com o informe diário de fundos da CVM.
+  ALTER TABLE assets ADD COLUMN cnpj TEXT;
+  `,
+  // v13: registro das carteiras hipotéticas (research/hipoteticas/). Cada vigência fica gravada
+  // com a data em que o sistema a viu pela primeira vez; o acompanhamento só a aplica a partir
+  // dessa data, então editar o arquivo depois não reescreve o passado.
+  `
+  CREATE TABLE hypothetical_versions (
+    portfolio TEXT NOT NULL,              -- id do arquivo
+    effective_on TEXT NOT NULL,           -- vigência escrita no arquivo
+    weights TEXT NOT NULL,                -- JSON [{ticker, weight_pct}], normalizado para 100
+    recorded_on TEXT NOT NULL,            -- primeiro dia em que o sistema viu esta vigência
+    PRIMARY KEY (portfolio, effective_on)
+  );
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [

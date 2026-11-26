@@ -2,7 +2,21 @@ import { join } from 'node:path';
 import type { DB } from './db.ts';
 import { listSnapshots } from './snapshots.ts';
 import { readTheses } from './theses.ts';
-import { assetIndex, cdiIndex, chainedIndex, lastOf, loadMarketData, maxDrawdown, toPct, weightsIndex, type WeightsIndex } from './price-index.ts';
+import {
+  assetIndex,
+  assetTotalIndex,
+  CASH_TICKER,
+  cdiIndex,
+  chainedIndex,
+  lastOf,
+  loadMarketData,
+  maxDrawdown,
+  toPct,
+  weightsIndex,
+  type MarketData,
+  type Snapshot,
+  type WeightsIndex,
+} from './price-index.ts';
 import { riskStats } from './stats.ts';
 import { readReferenceFiles, seriesCatalog } from './references.ts';
 
@@ -12,14 +26,59 @@ import { readReferenceFiles, seriesCatalog } from './references.ts';
  * está em price-index.ts.
  */
 
-export function buildPerformance(db: DB, opts: { from?: string; researchDir?: string; compare?: string } = {}) {
+/** Coletas da conta mais recente, da mais antiga para a mais nova. */
+export function walletSnapshots(db: DB): Snapshot[] {
   const all = listSnapshots(db); // mais recente primeiro
-  const empty = { available: false as const, reason: '' };
-  if (!all.length) return { ...empty, reason: 'Nenhuma coleta importada.' };
-  const snaps = all
+  return all
     .filter((s) => s.account_id === all[0].account_id)
     .reverse()
     .map((s) => ({ id: s.id, date: s.taken_at.slice(0, 10) }));
+}
+
+export interface RefLine {
+  ref: { key: string; label: string; ticker: string | null; note: string; source: string; kind: 'serie' | 'composicao' };
+  values: (number | null)[];
+  /** Com proventos reinvestidos. Para o CDI e para quem não tem proventos registrados, igual a `values`. */
+  total: (number | null)[];
+  rebalances: WeightsIndex['rebalances'] | null;
+  /** Ativos sem nenhum provento registrado: o retorno total deles é só preço. */
+  income_missing: string[];
+}
+
+/** Séries de referência (embutidas, dos arquivos e carteiras de composição) no eixo `dates`. */
+export function referenceLines(md: MarketData, refFiles: ReturnType<typeof readReferenceFiles>, dates: string[], cdi: (number | null)[]): RefLine[] {
+  const noIncome = (tickers: string[]) =>
+    [...new Set(tickers)].filter((t) => {
+      if (t === CASH_TICKER) return false;
+      const id = md.assetId(t);
+      return id === undefined || !md.incomeEvents(id).length;
+    });
+  return [
+    ...seriesCatalog(refFiles).map((r) => {
+      const id = r.ticker ? md.assetId(r.ticker) : undefined;
+      return {
+        ref: { ...r, kind: 'serie' as const },
+        values: r.ticker ? assetIndex(md, id, dates) : cdi,
+        total: r.ticker ? assetTotalIndex(md, id, dates) : cdi,
+        rebalances: null,
+        // A cota de fundo já embute o que o fundo distribui ou reinveste.
+        income_missing: r.ticker && !r.ticker.startsWith('CVM:') ? noIncome([r.ticker]) : [],
+      };
+    }),
+    // Carteiras de composição simuladas no mesmo eixo: só preço e com proventos reinvestidos.
+    ...refFiles.compositions.map((c) => {
+      const sim = weightsIndex(md, c.versions, dates, { cdi });
+      const ref = { key: c.key, label: c.label, ticker: null, note: c.source_name ?? c.file, source: 'arquivo', kind: 'composicao' as const };
+      const tickers = c.versions.filter((v) => v.from <= dates[dates.length - 1]).flatMap((v) => v.weights.map((w) => w.ticker));
+      return { ref, values: sim.values, total: weightsIndex(md, c.versions, dates, { reinvest: true, cdi }).values, rebalances: sim.rebalances, income_missing: noIncome(tickers) };
+    }),
+  ];
+}
+
+export function buildPerformance(db: DB, opts: { from?: string; researchDir?: string; compare?: string } = {}) {
+  const empty = { available: false as const, reason: '' };
+  const snaps = walletSnapshots(db);
+  if (!snaps.length) return { ...empty, reason: 'Nenhuma coleta importada.' };
 
   const md = loadMarketData(db);
   if (!md.sessions.length) return { ...empty, reason: 'Nenhuma cotação importada.' };
@@ -33,17 +92,8 @@ export function buildPerformance(db: DB, opts: { from?: string; researchDir?: st
 
   // --- Referências nas mesmas datas
   const refFiles = readReferenceFiles(opts.researchDir ? join(opts.researchDir, 'referencias') : undefined);
-  const catalog = seriesCatalog(refFiles);
   const cdi = cdiIndex(db, dates);
-  const refLines: { ref: { key: string; label: string; ticker: string | null; note: string; source: string; kind: 'serie' | 'composicao' }; values: (number | null)[]; rebalances: WeightsIndex['rebalances'] | null }[] = [
-    ...catalog.map((r) => ({ ref: { ...r, kind: 'serie' as const }, values: r.ticker ? assetIndex(md, md.assetId(r.ticker), dates) : cdi, rebalances: null })),
-    // Carteiras de composição simuladas (só preço), no mesmo eixo.
-    ...refFiles.compositions.map((c) => {
-      const sim = weightsIndex(md, c.versions, dates);
-      const ref = { key: c.key, label: c.label, ticker: null, note: c.source_name ?? c.file, source: 'arquivo', kind: 'composicao' as const };
-      return { ref, values: sim.values, rebalances: sim.rebalances };
-    }),
-  ];
+  const refLines = referenceLines(md, refFiles, dates, cdi);
   const byKey = (k: string) => refLines.find((l) => l.ref.key === k)?.values ?? dates.map(() => null);
 
   // --- Teses e blocos: a mesma conta, restrita aos ativos de cada um
@@ -73,9 +123,10 @@ export function buildPerformance(db: DB, opts: { from?: string; researchDir?: st
     ifix: toPct(byKey('IFIX'), cut),
   };
   const firstDate = (xs: (number | null)[]) => outDates[xs.findIndex((x) => x !== null)] ?? null;
-  const references = refLines.map(({ ref, values, rebalances }) => {
+  const references = refLines.map(({ ref, values, total, rebalances, income_missing }) => {
     const v = toPct(values, cut);
-    return { ...ref, values: v, pct: lastOf(v), first_date: firstDate(v), rebalances };
+    const t = toPct(total, cut);
+    return { ...ref, values: v, total: t, pct: lastOf(v), total_pct: lastOf(t), first_date: firstDate(v), rebalances, income_missing };
   });
   const groups = groupDefs.map(({ ids, ...g }) => {
     const idx = ids.size ? chainedIndex(md, snaps, dates, ids) : { price: dates.map(() => null), total: dates.map(() => null), unpriced_share: 0 };
@@ -101,8 +152,8 @@ export function buildPerformance(db: DB, opts: { from?: string; researchDir?: st
   const statsRows = [
     { key: '_carteira', label: 'Carteira com proventos', kind: 'carteira' as const, values: out.total },
     ...groups.map((g) => ({ key: g.key, label: g.label, kind: g.kind, values: g.total })),
-    ...references.filter((r) => r !== compareRef).map((r) => ({ key: r.key, label: r.label, kind: 'referencia' as const, values: r.values })),
-  ].map(({ values, ...row }) => ({ ...row, ...riskStats(values, outDates, compareRef?.values) }));
+    ...references.filter((r) => r !== compareRef).map((r) => ({ key: r.key, label: r.label, kind: 'referencia' as const, values: r.total })),
+  ].map(({ values, ...row }) => ({ ...row, ...riskStats(values, outDates, compareRef?.total) }));
 
   // --- Último pregão: variação por ativo (carteira da última coleta)
   const thesisOf = new Map<string, string>();

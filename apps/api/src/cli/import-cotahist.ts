@@ -10,6 +10,7 @@ import { openDb } from '../db.ts';
 import { dbPathOrExit } from '../db-path.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
 import { referenceTickers } from '../references.ts';
+import { hypotheticalTickers } from '../hypotheticals.ts';
 
 const args = process.argv.slice(2);
 if (!args.length) {
@@ -34,7 +35,7 @@ const dbPath = dbPathOrExit();
 const db = openDb(dbPath);
 console.log(`Banco: ${dbPath}`);
 
-const extraTickers = referenceTickers(join(dirname(dbPath), 'research'));
+const extraTickers = [...new Set([...referenceTickers(join(dirname(dbPath), 'research')), ...hypotheticalTickers(join(dirname(dbPath), 'research'))])];
 const reports: CotahistReport[] = [];
 for (const f of files) {
   const r = await importCotahist(db, f, { extraTickers });
