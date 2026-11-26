@@ -71,5 +71,8 @@ importa() { # nome, rota, corpo JSON
 importa tesouro tesouro/import "{\"since\":\"$(date -v-15d +%Y-%m-%d)\"}"
 importa proventos market-income/import "{\"since\":\"$(date -v-120d +%Y-%m-%d)\"}"
 importa fundos funds/import '{}'
+# Carteiras hipotéticas: grava com a data de hoje as vigências novas dos arquivos, para o
+# acompanhamento nunca valer antes do dia em que a vigência foi escrita.
+importa hipoteticas hypotheticals/register '{}'
 
 [ "$falhas" -eq 0 ]

@@ -27,6 +27,13 @@ Chame `controladoria` sozinho. Se os dados não estiverem conciliados ou o últi
 estiver velho para o mês, **pare** e peça a coleta (`/nova-coleta`). Não se faz comitê sobre
 dado errado.
 
+Peça também à controladoria o quadro **tese real × hipotética × referência**, lido de
+`GET /api/hypotheticals` (ver `docs/investimentos/hipoteticas.md`). O quadro tem uma linha por
+hipotética que já tenha acompanhamento: retorno com proventos da hipotética, da tese ligada,
+do CDI e da primeira referência, na janela do acompanhamento, mais maior queda e meses acima.
+- Só o **acompanhamento** entra no quadro. O backtest, se citado, vai com o aviso de viés.
+- Vigência "alterada depois do registro" entra em pendências de dados.
+
 ## 2. Análise, em paralelo
 
 Chame os três agentes na mesma mensagem e passe a cada um o boletim da controladoria e os
@@ -46,7 +53,8 @@ Com os relatórios anteriores como entrada:
 
 Grave a ata em `research/comite/AAAA-MM.md`, com estas seções:
 1. Resumo executivo, em 5 linhas.
-2. Dados e desempenho: período, carteira contra CDI e índices, proventos.
+2. Dados e desempenho: período, carteira contra CDI e índices, proventos, e o quadro tese
+   real × hipotética × referência.
 3. Cenário.
 4. Teses: tabela com tese, status anterior, status atual e o motivo em uma linha.
 5. Risco: exposições por fator, desvios contra a política e estresse.

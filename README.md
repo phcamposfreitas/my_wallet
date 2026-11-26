@@ -89,7 +89,7 @@ Reimportar não duplica: valor igual fica como está e valor revisado pela fonte
 um COTAHIST já baixado (diário, mensal ou anual, todos com o mesmo layout) e grava só o
 mercado à vista dos tickers cadastrados em ativos, mais os de referência: **BOVA11** e
 **XFIX11** (aproximação de Ibovespa e IFIX), os demais ETFs do catálogo e os ativos das
-carteiras de `research/referencias/` (ver
+carteiras de `research/referencias/` e de `research/hipoteticas/` (ver
 [docs/investimentos/referencias.md](docs/investimentos/referencias.md)). Os que faltam são
 cadastrados na primeira importação. Ficam
 de fora o fracionário e as opções, e o fator de cotação é aplicado. As cotações são as do
@@ -118,6 +118,9 @@ GET  /api/market-income?ticker=PETR4          → proventos anunciados (B3) por 
 POST /api/market-income/import {"since","tickers"}   proventos da B3 (ações e units)
 POST /api/tesouro/import {"since"}            PU base do Tesouro Direto (Tesouro Transparente)
 POST /api/funds/import {"months"}             cotas dos fundos com CNPJ (informe diário da CVM)
+GET  /api/hypotheticals?compare=IBOV         → carteiras hipotéticas: acompanhamento e backtest
+POST /api/hypotheticals/register             grava as vigências novas com a data de hoje
+POST /api/backtest {"weights","from","rebalance","thesis","references","compare"}  backtest avulso
 ```
 
 `/api/benchmarks` devolve o **CDI acumulado** no período, o produto de (1 + taxa diária)
@@ -153,6 +156,7 @@ A sessão principal faz o papel de CIO e conduz os rituais:
 | `/nova-coleta [pasta]` | quando exportar os CSVs da XP |
 | `/revisar-tese <tese ou ticker>` | depois de um alerta, de resultado trimestral ou de fato relevante |
 | `/nova-referencia <fonte>` | quando chega uma carteira recomendada ou a revisão de uma casa |
+| `/nova-hipotetica <ideia>` | para testar uma carteira ou tese antes de montar ([docs](docs/investimentos/hipoteticas.md)) |
 | `/comite-investimentos` | uma vez por mês |
 
 Os agentes analisam e preparam decisões, mas não operam nem recomendam. Teses, notas e atas

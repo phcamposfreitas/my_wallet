@@ -166,7 +166,8 @@ aparece marcada como "da tese".
 - **Active share:** metade da soma das diferenças de peso. A carteira inteira entra só nas
   classes de ativo que a referência tem: o Tesouro não conta contra uma carteira de ações.
 
-## Próximas fases
+## Carteiras hipotéticas
 
-1. Carteiras hipotéticas (teses que ainda não foram montadas), acompanhadas para frente a
-   partir da data de registro, e backtest com aviso de viés.
+Testes de "e se" (uma tese que ainda não existe, outra seleção de ativos, uma mistura com
+caixa) usam o mesmo formato e o mesmo motor, com acompanhamento a partir do registro e
+backtest separado. Ver [hipoteticas.md](hipoteticas.md).

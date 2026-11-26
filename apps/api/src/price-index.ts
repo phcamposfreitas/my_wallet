@@ -284,6 +284,10 @@ export const lastOf = (xs: (number | null)[]) => {
   return null;
 };
 
+/** Ticker reservado nas composições: caixa aplicado no CDI. */
+export const CASH_TICKER = 'CDI';
+const CASH_ID = -1;
+
 export interface WeightVersion {
   /** Data de vigência (publicação). O rebalanceamento é feito no fechamento do primeiro pregão a partir dela. */
   from: string;
@@ -302,8 +306,16 @@ export interface WeightsIndex {
  * vigência seguinte, deixando os pesos andarem com o mercado. Só preço. Ativo sem cotação na
  * data fica de fora e o peso dele é redistribuído entre os demais. Vigência anterior ao eixo vale
  * desde o início do eixo (a mais recente delas).
+ *
+ * O ticker `CDI` é caixa rendendo CDI: com `opts.cdi` (o cdiIndex no mesmo eixo), entra como um
+ * ativo cujo "preço" é o fator acumulado do CDI.
  */
-export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: string[], opts: { reinvest?: boolean } = {}): WeightsIndex {
+export function weightsIndex(
+  md: MarketData,
+  versions: WeightVersion[],
+  axis: string[],
+  opts: { reinvest?: boolean; cdi?: (number | null)[] } = {},
+): WeightsIndex {
   const values: (number | null)[] = axis.map(() => null);
   const rebalances: WeightsIndex['rebalances'] = [];
   const starts = new Map<number, WeightVersion>(); // posição no eixo -> vigência
@@ -314,16 +326,22 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
   const order = [...starts.keys()].sort((a, b) => a - b);
   let holdings: { id: number; q: number; last: number; lastDay: string; frozen: number | null }[] = [];
   let level = 1;
+  // Caixa no CDI: id fora do cadastro, preço = fator do CDI no dia do eixo.
+  const cdiAt = new Map<string, number>();
+  if (opts.cdi) axis.forEach((d, i) => opts.cdi![i] !== null && cdiAt.set(d, opts.cdi![i]! * 100));
+  const idOf = (ticker: string) => (ticker === CASH_TICKER ? (cdiAt.size ? CASH_ID : undefined) : md.assetId(ticker));
+  const closeOf = (id: number, day: string) =>
+    id === CASH_ID ? (cdiAt.has(day) ? { date: day, price: cdiAt.get(day)! } : null) : md.closeAt(id, day);
 
   const mark = (day: string) => {
     let v = 0;
     for (const h of holdings) {
       if (h.frozen === null) {
-        const px = md.closeAt(h.id, day)!.price;
+        const px = closeOf(h.id, day)!.price;
         if (px / h.last > EVENT_RATIO || h.last / px > EVENT_RATIO) h.frozen = h.q * h.last;
         else {
           // Com reinvestimento: provento com data-com entre o pregão anterior e este é recomprado no fechamento de hoje.
-          if (opts.reinvest) {
+          if (opts.reinvest && h.id !== CASH_ID) {
             const paid = md.incomeEvents(h.id).reduce((sum, e) => (e.date_with >= h.lastDay && e.date_with < day ? sum + e.cents : sum), 0);
             h.q += (h.q * paid) / px;
           }
@@ -343,8 +361,8 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
     if (holdings.length) level = mark(day); // a carteira anterior anda até o fechamento do rebalanceamento
     const v = starts.get(start)!;
     const priced = v.weights.flatMap((w) => {
-      const id = md.assetId(w.ticker);
-      const c = id !== undefined ? md.closeAt(id, day) : null;
+      const id = idOf(w.ticker);
+      const c = id !== undefined ? closeOf(id, day) : null;
       return id !== undefined && c && dayDiff(c.date, day) <= STALE_DAYS ? [{ id, w: w.weight_pct, price: c.price }] : [];
     });
     const pricedW = priced.reduce((a, p) => a + p.w, 0);
@@ -353,7 +371,7 @@ export function weightsIndex(md: MarketData, versions: WeightVersion[], axis: st
       from: v.from,
       on: day,
       priced_pct: total ? (pricedW / total) * 100 : 0,
-      missing: v.weights.filter((w) => !priced.some((p) => md.assetId(w.ticker) === p.id)).map((w) => w.ticker),
+      missing: v.weights.filter((w) => !priced.some((p) => idOf(w.ticker) === p.id)).map((w) => w.ticker),
     });
     if (!pricedW) {
       holdings = [];

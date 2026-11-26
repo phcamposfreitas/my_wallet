@@ -150,7 +150,7 @@ export function referenceTickers(researchDir: string | undefined): string[] {
   const files = readReferenceFiles(researchDir ? join(researchDir, 'referencias') : undefined);
   const out = new Set<string>();
   for (const r of [...BUILTIN_REFERENCES, ...files.series]) if (r.ticker && !r.ticker.startsWith('CVM:')) out.add(r.ticker);
-  for (const c of files.compositions) for (const v of c.versions) for (const w of v.weights) out.add(w.ticker);
+  for (const c of files.compositions) for (const v of c.versions) for (const w of v.weights) if (w.ticker !== 'CDI') out.add(w.ticker); // CDI = caixa
   return [...out].sort();
 }
 

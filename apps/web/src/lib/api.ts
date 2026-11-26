@@ -641,3 +641,53 @@ export interface ThesesMap {
   files?: Record<string, string>;
   body?: string;
 }
+
+// --- Carteiras hipotéticas (research/hipoteticas/) ---------------------------------
+export interface HypotheticalRow {
+  key: string;
+  label: string;
+  kind: 'hipotetica' | 'tese' | 'referencia';
+  note: string | null;
+  first_date: string | null;
+  price_pct: number | null;
+  total_pct: number | null;
+  annualized_pct: number | null;
+  max_drawdown: { pct: number; peak_date: string; trough_date: string };
+  days: number;
+  vol_pct: number | null;
+  beta: number | null;
+  correlation: number | null;
+  tracking_error_pct: number | null;
+  months: number;
+  months_beat: number;
+}
+
+export interface ComparisonWindow {
+  from: string;
+  to: string;
+  dates: string[];
+  compare: { key: string; label: string } | null;
+  lines: { key: string; label: string; kind: HypotheticalRow['kind']; price: (number | null)[]; total: (number | null)[] }[];
+  rows: HypotheticalRow[];
+  rebalances: { from: string; on: string; priced_pct: number; missing: string[] }[];
+}
+
+export interface Hypothetical {
+  key: string;
+  label: string;
+  thesis: string | null;
+  references: string[];
+  rebalance: 'nenhum' | 'mensal' | 'trimestral' | 'semestral' | 'anual';
+  file: string;
+  registered_on: string | null;
+  versions: { from: string; assets: number; recorded_on: string | null; applies_on: string | null; state: 'registrada' | 'tardia' | 'alterada' | 'pendente' | 'removida' }[];
+  warnings: string[];
+  forward: ComparisonWindow | { pending: true; starts_on: string } | null;
+  backtest: ComparisonWindow | null;
+}
+
+export interface Hypotheticals {
+  as_of: string;
+  hypotheticals: Hypothetical[];
+  warnings: string[];
+}

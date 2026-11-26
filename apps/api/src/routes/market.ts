@@ -9,6 +9,7 @@ import { computeBenchmarks } from '../benchmarks.ts';
 import { findSeries, importSeries, SGS_SERIES, type FetchFn } from '../importers/sgs.ts';
 import { cotahistFiles, importCotahist, type CotahistReport } from '../importers/cotahist.ts';
 import { buildReferences, referenceFunds, referenceTickers } from '../references.ts';
+import { hypotheticalTickers } from '../hypotheticals.ts';
 import { importMarketIncome } from '../importers/b3-proventos.ts';
 import { importTesouro } from '../importers/tesouro.ts';
 import { downloadCvm, ensureFundAssets, importCvmFile, type CvmReport } from '../importers/cvm-fundos.ts';
@@ -86,7 +87,7 @@ export function marketRoutes(app: FastifyInstance, db: DB, opts: { fetch?: Fetch
     const files = cotahistFiles(full);
     if (!files.length) return reply.code(400).send({ error: 'Nenhum arquivo COTAHIST_*.ZIP ou .TXT na pasta' });
     const results: CotahistReport[] = [];
-    const extraTickers = referenceTickers(opts.researchDir);
+    const extraTickers = [...new Set([...referenceTickers(opts.researchDir), ...hypotheticalTickers(opts.researchDir)])];
     for (const file of files) results.push(await importCotahist(db, file, { extraTickers }));
     const ok = results.every((r) => r.status === 'importado');
     return reply.code(ok ? 200 : 422).send({ ok, results });

@@ -332,6 +332,18 @@ const MIGRATIONS: string[] = [
   -- CNPJ (só dígitos) para casar com o informe diário de fundos da CVM.
   ALTER TABLE assets ADD COLUMN cnpj TEXT;
   `,
+  // v13: registro das carteiras hipotéticas (research/hipoteticas/). Cada vigência fica gravada
+  // com a data em que o sistema a viu pela primeira vez; o acompanhamento só a aplica a partir
+  // dessa data, então editar o arquivo depois não reescreve o passado.
+  `
+  CREATE TABLE hypothetical_versions (
+    portfolio TEXT NOT NULL,              -- id do arquivo
+    effective_on TEXT NOT NULL,           -- vigência escrita no arquivo
+    weights TEXT NOT NULL,                -- JSON [{ticker, weight_pct}], normalizado para 100
+    recorded_on TEXT NOT NULL,            -- primeiro dia em que o sistema viu esta vigência
+    PRIMARY KEY (portfolio, effective_on)
+  );
+  `,
 ];
 
 const DEFAULT_CATEGORIES: Array<[string, 'expense' | 'income', string]> = [
