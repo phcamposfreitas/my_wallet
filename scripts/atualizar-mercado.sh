@@ -18,6 +18,21 @@ if ! curl -sf --max-time 10 "$API/health" >/dev/null; then
   echo "API fora do ar em $API; nada importado"
   exit 1
 fi
+
+# Quando o computador dorme às 21h30, o launchd roda o script ao acordar, às vezes antes de a
+# rede voltar. Sem rede, tudo falha e o pregão fica para trás; por isso espera a internet
+# (qualquer resposta da B3 serve) por até ESPERA_REDE segundos antes de começar.
+ESPERA_REDE="${ESPERA_REDE:-600}"
+esperou=0
+while [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$BASE/")" = 000 ]; do
+  if [ "$esperou" -ge "$ESPERA_REDE" ]; then
+    echo "sem internet depois de ${ESPERA_REDE}s; nada importado"
+    exit 1
+  fi
+  sleep 30
+  esperou=$((esperou + 30))
+done
+[ "$esperou" -gt 0 ] && echo "rede de volta depois de ${esperou}s"
 mkdir -p "$DIR"
 falhas=0
 
